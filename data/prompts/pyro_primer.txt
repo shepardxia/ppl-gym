@@ -1,0 +1,78 @@
+Pyro is a probabilistic programming framework on PyTorch. Programs use Python syntax with `pyro.sample`, `pyro.factor`, `pyro.observe`, and inference algorithms from `pyro.infer`. A few conventions for this benchmark:
+
+Imports already available at the top of your program (do not re-import):
+  - `import pyro`
+  - `import pyro.distributions as dist`
+  - `import torch`
+
+Random sampling: every random draw uses `pyro.sample("name", dist.<Name>(args))`. Each call must have a unique string name. Names are arbitrary but must be unique within an inference run.
+
+Common distributions (in `dist`):
+  - `dist.Bernoulli(p)`              — returns 0.0 or 1.0 (Bernoulli is float-valued in Pyro)
+  - `dist.Categorical(probs=tensor)` — returns int 0..K-1; pass `probs` (must sum to 1) or `logits`
+  - `dist.Normal(mu, sigma)` (continuous)
+  - `dist.Beta(alpha, beta)`
+  - `dist.Gamma(alpha, beta)`
+  - `dist.Dirichlet(concentration_tensor)`
+  - `dist.Binomial(total_count, probs)`
+  - `dist.Poisson(rate)`
+  - `dist.Uniform(low, high)`
+  - `dist.Multinomial(total_count, probs)`
+
+Conditioning and observation:
+  - `pyro.sample("obs", dist.Normal(mu, 1.0), obs=torch.tensor(2.5))`  — condition on a sampled value
+  - `pyro.factor("name", log_prob_tensor)` — add `log_prob` to the trace's score directly
+
+Tensors: use `torch.tensor([...])` for arrays of probabilities or vectors. Pyro distributions accept tensor inputs and broadcast.
+
+Inference and the `ANSWER` binding: your program MUST end with a top-level assignment to a variable named `ANSWER`. The harness reads this variable and serializes it.
+
+The `ANSWER` value can be:
+  - A Pyro/Torch `Distribution` object — serialized as `{probs, support}` if discrete with finite support, otherwise as a continuous-distribution descriptor.
+  - A Python primitive: number, string, bool — emitted as-is.
+  - A list or dict — recursively serialized.
+  - A tensor — serialized as `{__kind: "tensor", dims, data}` (or as a scalar if numel==1).
+
+Common inference patterns:
+
+  For an EXACT POSTERIOR over discrete latents (analog of WebPPL's `Infer({method:'enumerate'},...)`):
+  Compute the posterior by hand using `enumerate_support` and `log_prob`:
+
+  ```
+  import itertools
+
+  # If your latent has K discrete values:
+  values = list(range(K))
+  log_w = []
+  for v in values:
+      # build trace by hand, sum scores, factor in observations
+      # ...
+      log_w.append(score)
+  w = torch.tensor(log_w).exp()
+  w = w / w.sum()
+  ANSWER = dist.Categorical(probs=w)
+  ```
+
+  Alternative for SIMPLE cases: if the answer is a closed-form distribution (e.g., the result of conjugate updating a Beta prior with a Bernoulli observation), just construct that distribution directly and bind it to `ANSWER`.
+
+  For a MARGINAL over a single discrete variable with finite support and discrete posterior:
+  ```
+  posterior = dist.Categorical(probs=probabilities_tensor)
+  ANSWER = posterior
+  ```
+
+  For SAMPLES from a model:
+  ```
+  samples = [model() for _ in range(N)]
+  ANSWER = samples  # list of values; each gets serialized
+  ```
+
+Output value conventions:
+  - `dist.Bernoulli(p)` has support `[0.0, 1.0]` — note these are floats, not booleans.
+  - `dist.Categorical(probs=[p0,p1,p2])` has support `[0, 1, 2]` — integers.
+  - Continuous distributions don't have finite enumerable support; they serialize to a string repr and shouldn't be the `ANSWER` of a `distribution`-shape atom.
+
+Avoid:
+  - `pyro.poutine`-based heavy machinery unless the problem genuinely requires SVI or MCMC.
+  - `for`/`while` loops over `pyro.sample` calls without unique names (Pyro will error on duplicate sample sites).
+  - Printing or `display()` — only the serialized `ANSWER` is read.

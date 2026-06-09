@@ -180,3 +180,84 @@ GT from atom-1 with appropriate slack.
 `print(...)` call at the top level (e.g., block 7 defines `printError` using `print`),
 the call will fail unless `print` is also stubbed. Recommend adding a `print` stub that
 returns its argument (identity behavior), consistent with the CPS fix above.
+
+---
+
+## Calibration Pass (post-eval, post-gates)
+
+After running the 8-config eval (haiku/sonnet × primer/noprimer × thinking/no-thinking)
+on all 17 emissions and inspecting the bucket grid, four atoms failed across all or
+nearly-all configs. Each failure revealed a class of curation-time bug the original
+pipeline silently let through. Three of these classes are now caught by new gates in
+`scripts/assemble_curated.py`; the fourth is only catchable via the eval itself.
+
+### Gates added
+
+**Determinism gate** — for `value`-shape atoms, re-run the GT with `random_seed=1337`
+and reject if the answer differs from the seed=42 result. Catches stochastic primitives
+shaped as `value` (e.g., `geometric(0.5)` → 2 at one seed, 3 at another).
+
+**Dedup gate** — parse the assembled GT with esprima (via `scripts/_check_dup_vars.js`,
+using webppl's bundled copy) and reject if any top-level `var X` is declared more than
+once. Catches over-eager `source_block_indices` selection where overlapping blocks each
+re-declare the same helper (the `///fold:` pattern noted above).
+
+**Samples self-consistency gate** — for `samples`-shape atoms, re-run the GT at a
+different seed and compute TV between the two empirical distributions (same metric the
+eval uses to score). Reject if TV > 0.5. Catches two failure modes simultaneously:
+(a) "list-as-trajectory misclassified as samples" (random walks where every continuous
+float is unique), and (b) "samples drawn from a distribution whose parameters are themselves
+unconditioned random variables" (the 2D mixture with random means/stds per run).
+
+### Atom-shape override
+
+Emissions may now include an optional `answer_shape` field (`"value"` / `"distribution"`
+/ `"samples"`). When present it overrides the answer-driven heuristic in
+`classify_answer`. The agent should set this explicitly whenever the wrap_target returns
+a structured list that isn't IID samples (trajectories, paths, records-as-lists). The
+heuristic alone can't distinguish these from samples-shape lists.
+
+### Atoms now in `_dippl_broken.jsonl`
+
+| Atom | Gate | Diagnosis |
+|---|---|---|
+| `dippl-02-webppl/atom-1` | determinism | `geometric(0.5)` shaped as value is irreducibly stochastic |
+| `dippl-04-factorseq/atom-1` | dedup | `transition` / `observeState` / `hmm` declared 2–3× from `///fold:` block overlap |
+| `dippl-05-particlefilter/atom-2` | samples self-consistency | random walk; trajectories at seed=42 vs seed=1337 have TV=1 |
+| `dippl-05-particlefilter/atom-3` | samples self-consistency | semi-Markov walk; same problem |
+| `dippl-05-particlefilter/atom-4` | samples self-consistency | mixture with random parameters per run; TV=1 between own seeds |
+
+### Atom that passes gates but fails eval
+
+`dippl-03-enumeration/atom-2` — `v-` across all 8 configs. The prompt says
+"call err with an error message string"; the GT pins the literal
+`'Error: cpsFactorial: n < 0!'`. The prompt under-specifies what the LM should emit.
+This is **prompt/wrap_target drift** — the wrap_target is more specific than the prompt.
+The curation pipeline can't catch this; only the eval can, by observing uniform failure
+across LMs. The right fix is to tighten the prompt to pin the exact error string (or to
+soften the wrap_target — e.g., wrap the error in `function(e){return 'err';}` so the
+return value doesn't depend on the LM's choice of message).
+
+### Lessons for chapters/problang/forestdb agent briefs
+
+1. **Stochasticity discipline.** An atom whose wrap_target executes any sampling call
+   (`flip`, `gaussian`, `geometric`, `categorical`, ...) without an `Infer` wrapper
+   cannot be shaped as `value`. The determinism gate now enforces this, but the agent
+   should choose the right shape up front rather than rely on rejection.
+
+2. **`samples`-shape is for IID draws.** A list returned from `repeat(N, fn)` is samples.
+   A list built up by recursion (random walks, trajectories, paths, sequences) is *not*
+   samples-shape under the eval's TV-on-empirical metric. Such atoms should either
+   (a) return a deterministic summary (final position, distance traveled), or
+   (b) be wrapped in `Infer` over the relevant marginal, or (c) be retired.
+
+3. **Prompt completeness.** Every literal value, string, or numeric constant in the
+   wrap_target must either appear in the prompt or be derivable from the prompt's spec.
+   The agent should re-read its own emission and ask: "could a fresh LM, seeing only the
+   prompt, produce code whose output matches the wrap_target's output?" If not, the
+   prompt is under-specified.
+
+4. **Pilot eval before scaling.** For each new corpus, run a single-config eval (cheapest
+   model, default settings) on the gate-passed atoms before committing to the full
+   8-config sweep. Atoms that fail uniformly on the pilot are structurally broken in a
+   way the gates miss (almost always the prompt-completeness issue from point 3).

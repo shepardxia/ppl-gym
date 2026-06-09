@@ -21,6 +21,18 @@ from eval.config import (
     DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT, EvalConfig,
 )
 from eval.executor import execute_webppl
+from eval.executor_pyro import execute_pyro
+
+
+def _execute_for(atom: dict):
+    """Return the executor function appropriate to the atom's language.
+
+    Defaults to WebPPL for atoms without a `language` field (preserves the
+    v2 dataset's implicit contract).
+    """
+    if atom.get("language") == "pyro":
+        return execute_pyro
+    return execute_webppl
 from eval.io import load_jsonl
 from eval.metrics import (
     SHAPE_SAMPLES,
@@ -30,6 +42,7 @@ from eval.metrics import (
     collect_metrics,
     compare_by_shape,
 )
+from eval.spec_metrics import compare_by_spec, collect_metrics_spec
 
 
 def _is_top_samples(shape) -> bool:
@@ -51,7 +64,8 @@ def _is_aggregate_samples(answer) -> bool:
     )
 
 
-def _run_mc(code, n, timeout, base_seed=DEFAULT_SEED, workers=DEFAULT_MC_WORKERS):
+def _run_mc(code, n, timeout, base_seed=DEFAULT_SEED, workers=DEFAULT_MC_WORKERS,
+            executor=execute_webppl):
     """Run `code` with seeds base_seed..base_seed+n-1 in parallel.
 
     Returns (answers, first_error). Each entry of `answers` is the run's
@@ -62,7 +76,7 @@ def _run_mc(code, n, timeout, base_seed=DEFAULT_SEED, workers=DEFAULT_MC_WORKERS
     errors: list = [None] * n
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(execute_webppl, code, timeout=timeout, random_seed=base_seed + i): i
+            pool.submit(executor, code, timeout=timeout, random_seed=base_seed + i): i
             for i in range(n)
         }
         for fut in futures:
@@ -86,32 +100,36 @@ def _ensure_groundtruth_output(atom, *, cfg: EvalConfig):
     cached = atom.get("groundtruth_output")
     if cached is not None:
         return cached, {"source": "cached"}
+    exec_fn = _execute_for(atom)
     if _is_top_samples(atom["answer_shape"]):
         answers, _ = _run_mc(atom["groundtruth_code"], cfg.n_mc, cfg.timeout,
-                             base_seed=cfg.seed, workers=cfg.mc_workers)
+                             base_seed=cfg.seed, workers=cfg.mc_workers,
+                             executor=exec_fn)
         non_null = [a for a in answers if a is not None]
         return non_null, {"source": "executed", "n_mc": cfg.n_mc}
-    res = execute_webppl(atom["groundtruth_code"], timeout=cfg.timeout, random_seed=cfg.seed)
+    res = exec_fn(atom["groundtruth_code"], timeout=cfg.timeout, random_seed=cfg.seed)
     if not res.success:
         return None, {"source": "executed", "error": res.error_message}
     return res.answer, {"source": "executed"}
 
 
 def _run_gen(atom, generated_code, *, cfg: EvalConfig, gt_answer=None):
+    exec_fn = _execute_for(atom)
     if _is_top_samples(atom["answer_shape"]):
         # If the GT's cached answer is already a list (aggregated samples),
         # the gen should also run once — otherwise we'd compare list-of-N-lists
         # vs flat-list-of-scalars and trivially get TV=1. The comparator will
         # coerce a Distribution-shaped gen result to samples if needed.
         if _is_aggregate_samples(gt_answer):
-            res = execute_webppl(generated_code, timeout=cfg.timeout, random_seed=cfg.seed)
+            res = exec_fn(generated_code, timeout=cfg.timeout, random_seed=cfg.seed)
             return {
                 "executed": res.success,
                 "answer": res.answer if res.success else None,
                 "error": None if res.success else res.error_message,
             }
         answers, first_error = _run_mc(generated_code, cfg.n_mc, cfg.timeout,
-                                       base_seed=cfg.seed, workers=cfg.mc_workers)
+                                       base_seed=cfg.seed, workers=cfg.mc_workers,
+                                       executor=exec_fn)
         non_null = [a for a in answers if a is not None]
         return {
             "executed": bool(non_null),
@@ -119,7 +137,7 @@ def _run_gen(atom, generated_code, *, cfg: EvalConfig, gt_answer=None):
             "n_ok": len(non_null), "n_total": cfg.n_mc,
             "error": None if non_null else (first_error or "all reruns failed"),
         }
-    res = execute_webppl(generated_code, timeout=cfg.timeout, random_seed=cfg.seed)
+    res = exec_fn(generated_code, timeout=cfg.timeout, random_seed=cfg.seed)
     return {
         "executed": res.success,
         "answer": res.answer if res.success else None,
@@ -135,8 +153,14 @@ def evaluate_atom(
     timeout: int = DEFAULT_TIMEOUT,
     seed: int = DEFAULT_SEED,
     n_mc: int = DEFAULT_N_MC,
+    spec: dict | None = None,
 ) -> dict:
-    """Score one generated program against one atom."""
+    """Score one generated program against one atom.
+
+    When `spec` is provided, dispatches via `compare_by_spec` (spec-aware
+    metrics: Wasserstein, KS, parametric param-match, stepwise trajectory).
+    Falls back to `compare_by_shape` (legacy 4-shape enum) when omitted.
+    """
     if cfg is None:
         cfg = EvalConfig(timeout=timeout, seed=seed, n_mc=n_mc)
     gt_answer, gt_meta = _ensure_groundtruth_output(atom, cfg=cfg)
@@ -152,6 +176,8 @@ def evaluate_atom(
             "jaccard": code_jaccard(generated_code, atom["groundtruth_code"]),
         },
     }
+    if spec is not None:
+        out["spec"] = spec
 
     if not gen["executed"] or gt_answer is None:
         out["comparison"] = {"shape": str(atom["answer_shape"]), "ok": False,
@@ -159,9 +185,14 @@ def evaluate_atom(
         out["metrics"] = {}
         return out
 
-    cmp = compare_by_shape(gen["answer"], gt_answer, atom["answer_shape"])
-    out["comparison"] = cmp
-    out["metrics"] = collect_metrics(cmp)
+    if spec is not None:
+        cmp = compare_by_spec(gen["answer"], gt_answer, spec)
+        out["comparison"] = cmp
+        out["metrics"] = collect_metrics_spec(cmp)
+    else:
+        cmp = compare_by_shape(gen["answer"], gt_answer, atom["answer_shape"])
+        out["comparison"] = cmp
+        out["metrics"] = collect_metrics(cmp)
     return out
 
 

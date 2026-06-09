@@ -11,7 +11,7 @@ from threading import Lock
 
 from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT, EvalConfig
 from eval.harness import evaluate_atom
-from eval.io import iter_scored, load_jsonl
+from eval.io import iter_scored, load_atom_specs, load_jsonl
 from eval.metrics import aggregate_metrics
 
 
@@ -22,9 +22,12 @@ def run_scoring(
     *,
     cfg: EvalConfig,
     workers: int = 4,
+    specs_path: Path | None = None,
+    use_specs: bool = True,
 ):
     atoms_by_id = {a["id"]: a for a in load_jsonl(dataset_path)}
     gens = [r for r in load_jsonl(generations_path) if not r.get("summary")]
+    specs_by_id = load_atom_specs(specs_path) if use_specs else {}
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     write_lock = Lock()
@@ -36,7 +39,8 @@ def run_scoring(
         if atom is None:
             return {**rec, "evaluation": {"error": "atom not found in dataset"}}
         t0 = time.time()
-        evaluation = evaluate_atom(atom, rec["generation"]["code"], cfg=cfg)
+        spec = specs_by_id.get(rec["id"]) if use_specs else None
+        evaluation = evaluate_atom(atom, rec["generation"]["code"], cfg=cfg, spec=spec)
         return {**rec, "evaluation": evaluation, "score_runtime_sec": round(time.time() - t0, 2)}
 
     all_results = []
@@ -104,6 +108,10 @@ def main():
     p.add_argument("--mc-workers", type=int, default=DEFAULT_MC_WORKERS)
     p.add_argument("--workers", type=int, default=4,
                    help="Atom-level concurrent scoring jobs")
+    p.add_argument("--specs", default=None,
+                   help="Path to atom_specs.jsonl (default: data/atom_specs.jsonl if present)")
+    p.add_argument("--no-specs", action="store_true",
+                   help="Force legacy comparator (compare_by_shape)")
     args = p.parse_args()
 
     # Cap mc_workers so total in-flight WebPPL processes <= ~mc_workers cap.
@@ -120,6 +128,8 @@ def main():
         output_path=Path(args.output),
         cfg=cfg,
         workers=args.workers,
+        specs_path=Path(args.specs) if args.specs else None,
+        use_specs=not args.no_specs,
     )
 
     cross = summary["cross"]
@@ -130,12 +140,27 @@ def main():
     print(f"  Atoms:           {cross['n_atoms']}")
     print(f"  Executed:        {cross['n_executed']} ({cross['exec_rate']:.1%})")
     print(f"  Parse failures:  {cross['n_parse_failures']}")
+    # Legacy aggregate keys
     if cross["mean_kl"] is not None:
         print(f"  Mean KL:         {cross['mean_kl']:.4f} (n={cross['n_kl_metrics']})")
     if cross["mean_tv"] is not None:
         print(f"  Mean TV:         {cross['mean_tv']:.4f} (n={cross['n_tv_metrics']})")
     if cross["mean_value_exact"] is not None:
         print(f"  Mean value-exact: {cross['mean_value_exact']:.2%} (n={cross['n_exact_metrics']})")
+    # Spec-aware aggregates (only print when present)
+    for label, key, fmt in (
+        ("Mean W1",            "mean_w1",            "{:.4f}"),
+        ("Mean KS",            "mean_ks",            "{:.4f}"),
+        ("Mean length-TV",     "mean_length_tv",     "{:.4f}"),
+        ("Mean step-TV",       "mean_mean_step_tv",  "{:.4f}"),
+        ("Mean family-match",  "mean_family_match",  "{:.2%}"),
+        ("Mean params-match",  "mean_params_match",  "{:.2%}"),
+    ):
+        v = cross.get(key)
+        if v is None:
+            continue
+        n_key = key.replace("mean_", "n_") + "_metrics"
+        print(f"  {label:18s} {fmt.format(v)} (n={cross.get(n_key, 0)})")
     print(f"  Wall clock:      {summary['total_runtime_sec']:.1f}s")
 
 

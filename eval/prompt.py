@@ -21,18 +21,53 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "data" / "prompts"
 
 SYSTEM_PROMPT_BASE = (_PROMPTS_DIR / "system_base.txt").read_text().rstrip("\n")
 WEBPPL_PRIMER = (_PROMPTS_DIR / "webppl_primer.txt").read_text().rstrip("\n")
+PYRO_PRIMER = (_PROMPTS_DIR / "pyro_primer.txt").read_text().rstrip("\n")
+
+# The base prompt is WebPPL-flavored ("emit one fenced code block ending in
+# var ANSWER = ..."). For Pyro we override the format guidance.
+PYRO_SYSTEM_BASE = (
+    "You are a Pyro code generator. Given an exercise, produce a single Python program "
+    "using Pyro that binds the answer to a top-level variable named `ANSWER`.\n\n"
+    "Answer format (strict): emit exactly one fenced code block.\n\n"
+    "```python\n"
+    "<your Pyro program ending with: ANSWER = <expression>>\n"
+    "```\n\n"
+    "The last statement of your program MUST be `ANSWER = <expression>` where "
+    "`<expression>` is the answer the prompt asks for — typically a "
+    "`pyro.distributions.Distribution` for a distribution, a numeric/list/dict value, "
+    "or a Python literal.\n\n"
+    "Do not write prose, explanations, or multiple code blocks."
+)
 
 
-def system_prompt(*, with_primer: bool = True) -> str:
-    if with_primer:
-        return SYSTEM_PROMPT_BASE + "\n\n" + WEBPPL_PRIMER
+def _primer_for(language: str) -> str:
+    if language == "pyro":
+        return PYRO_PRIMER
+    return WEBPPL_PRIMER
+
+
+def _base_for(language: str) -> str:
+    if language == "pyro":
+        return PYRO_SYSTEM_BASE
     return SYSTEM_PROMPT_BASE
 
 
+def system_prompt(*, with_primer: bool = True, language: str = "webppl") -> str:
+    base = _base_for(language)
+    if with_primer:
+        return base + "\n\n" + _primer_for(language)
+    return base
+
+
 def format_messages(atom: dict, *, with_primer: bool = True) -> list[dict]:
-    """Return [system, user] messages for one atom."""
+    """Return [system, user] messages for one atom.
+
+    The atom's optional `language` field (defaults to "webppl") selects the
+    appropriate system prompt + primer.
+    """
+    language = atom.get("language", "webppl")
     return [
-        {"role": "system", "content": system_prompt(with_primer=with_primer)},
+        {"role": "system", "content": system_prompt(with_primer=with_primer, language=language)},
         {"role": "user", "content": atom["prompt"]},
     ]
 

@@ -22,6 +22,20 @@ export const COLLECTIONS: Collection[] = [
     primaryRun: 'sonnet-46-primer-dippl',
     description: 'Hand-curated WebPPL exercises from dippl.org (17 atoms) — v3 pilot using the M-to-N chunking flow.',
   },
+  {
+    slug: 'curated-v3-forestdb',
+    label: 'forestdb models',
+    jsonlPath: 'data/curated_v3/forestdb.jsonl',
+    primaryRun: 'sonnet-46-primer-forestdb',
+    description: 'Hand-curated WebPPL models from forestdb.org (stratified pilot, 10 atoms) — paper-page style.',
+  },
+  {
+    slug: 'pyro-v3-probmods',
+    label: 'ProbMods exercises (Pyro)',
+    jsonlPath: 'data/pyro_v3/probmods.jsonl',
+    primaryRun: 'sonnet-46-primer-pyro-probmods',
+    description: 'Probmods textbook exercises translated to Pyro (40 atoms from v2; 36 atoms not yet translated due to MCMC complexity).',
+  },
 ];
 
 async function readJsonl<T>(absPath: string): Promise<T[]> {

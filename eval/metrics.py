@@ -65,9 +65,7 @@ def _normalize_dist(serialized) -> dict | None:
     Keys in the returned mapping are `json.dumps(val, sort_keys=True)` so
     object support points with reordered fields collide into the same bin.
     """
-    if not isinstance(serialized, dict):
-        return None
-    if serialized.get("__kind") != KIND_DISTRIBUTION:
+    if not _looks_like_distribution(serialized):
         return None
     support = serialized.get("support") or []
     probs = serialized.get("probs") or []
@@ -169,10 +167,22 @@ def value_match(gen, gt, rtol: float = 0.05):
 # Shape-dispatched comparison
 # ---------------------------------------------------------------------------
 
+def _looks_like_distribution(x) -> bool:
+    """A dict-shaped distribution has either __kind=distribution or probs+support keys.
+
+    Pyro LMs sometimes emit `__kind: 'Categorical'` or `__kind: 'joint_distribution'`
+    instead of the canonical 'distribution' tag; accept any dict that has both
+    `probs` and `support` lists, since that's the cross-PPL data contract.
+    """
+    if not isinstance(x, dict):
+        return False
+    if x.get("__kind") == KIND_DISTRIBUTION:
+        return True
+    return isinstance(x.get("probs"), list) and isinstance(x.get("support"), list)
+
+
 def _cmp_distribution(gen, gt) -> dict:
-    if not (isinstance(gen, dict) and isinstance(gt, dict)
-            and gen.get("__kind") == KIND_DISTRIBUTION
-            and gt.get("__kind") == KIND_DISTRIBUTION):
+    if not (_looks_like_distribution(gen) and _looks_like_distribution(gt)):
         return {"shape": SHAPE_DISTRIBUTION, "ok": False, "error": "not a distribution",
                 "gen_kind": gen.get("__kind") if isinstance(gen, dict) else None,
                 "gt_kind": gt.get("__kind") if isinstance(gt, dict) else None}
@@ -188,7 +198,7 @@ def _distribution_to_samples(d: dict, n: int = 200) -> list | None:
     comparison with samples-shape atoms. Returns ~n samples drawn from
     the distribution's support according to its probs.
     """
-    if not isinstance(d, dict) or d.get("__kind") != KIND_DISTRIBUTION:
+    if not _looks_like_distribution(d):
         return None
     support = d.get("support") or []
     probs = d.get("probs") or []
@@ -208,9 +218,9 @@ def _distribution_to_samples(d: dict, n: int = 200) -> list | None:
 def _cmp_samples(gen, gt) -> dict:
     # Allow comparison when one side produced a distribution and the
     # other a sample list — coerce by drawing from the distribution.
-    if isinstance(gen, dict) and gen.get("__kind") == KIND_DISTRIBUTION:
+    if _looks_like_distribution(gen):
         gen = _distribution_to_samples(gen) or gen
-    if isinstance(gt, dict) and gt.get("__kind") == KIND_DISTRIBUTION:
+    if _looks_like_distribution(gt):
         gt = _distribution_to_samples(gt) or gt
     if not isinstance(gen, list) or not isinstance(gt, list):
         return {"shape": SHAPE_SAMPLES, "ok": False, "error": "samples must be a list",
@@ -277,25 +287,50 @@ def collect_metrics(comparison: dict) -> dict:
     return out
 
 
+_BUCKETS = (
+    # Most specific suffix first — "length_tv" must match before "tv".
+    "length_tv", "mean_step_tv",
+    "family_match", "params_match",
+    "kl", "tv", "w1", "ks", "exact", "approx",
+)
+
+
+def _bucket_for(key: str) -> str | None:
+    for b in _BUCKETS:
+        if key == b or key.endswith("." + b):
+            return b
+    return None
+
+
 def aggregate_metrics(metrics_per_atom: list[dict]) -> dict:
-    """Bucket metric values across atoms by suffix (kl/tv/exact)."""
-    kls, tvs, exacts = [], [], []
+    """Bucket metric values across atoms by suffix; mean per bucket.
+
+    Buckets cover both legacy (kl/tv/exact/approx) and spec-aware metrics
+    (w1, ks, length_tv, mean_step_tv, family_match, params_match). Legacy
+    summary keys (`mean_kl`, `mean_tv`, `mean_value_exact`) are preserved.
+    """
+    buckets: dict[str, list] = {b: [] for b in _BUCKETS}
     for m in metrics_per_atom:
         for k, v in (m or {}).items():
             if v is None:
                 continue
-            if k.endswith("kl"):
-                kls.append(v)
-            elif k.endswith("tv"):
-                tvs.append(v)
-            elif k.endswith("exact"):
-                exacts.append(v)
+            b = _bucket_for(k)
+            if b is None:
+                continue
+            buckets[b].append(v)
 
     def _mean(xs):
         return (sum(xs) / len(xs)) if xs else None
 
-    return {
-        "mean_kl": _mean(kls), "n_kl_metrics": len(kls),
-        "mean_tv": _mean(tvs), "n_tv_metrics": len(tvs),
-        "mean_value_exact": _mean(exacts), "n_exact_metrics": len(exacts),
+    out = {
+        # legacy keys retained verbatim
+        "mean_kl": _mean(buckets["kl"]), "n_kl_metrics": len(buckets["kl"]),
+        "mean_tv": _mean(buckets["tv"]), "n_tv_metrics": len(buckets["tv"]),
+        "mean_value_exact": _mean(buckets["exact"]), "n_exact_metrics": len(buckets["exact"]),
     }
+    # new buckets
+    for b in ("approx", "w1", "ks", "length_tv", "mean_step_tv",
+              "family_match", "params_match"):
+        out[f"mean_{b}"] = _mean(buckets[b])
+        out[f"n_{b}_metrics"] = len(buckets[b])
+    return out

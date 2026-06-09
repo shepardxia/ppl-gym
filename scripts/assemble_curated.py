@@ -3,7 +3,14 @@
 Agent emissions JSONL: each row has
   {id, source, source_block_indices, prompt,
    wrap_target (optional but recommended),
+   answer_shape (optional override: "value" | "distribution" | "samples"),
    notes (optional)}
+
+When `answer_shape` is provided, it overrides the heuristic in
+`classify_answer`. The heuristic is purely answer-driven ("long list →
+samples") and can't distinguish a list-of-IID-samples from a
+list-as-data-structure (e.g., a random-walk trajectory). The agent has the
+context to make that call; the pipeline shouldn't second-guess it.
 
 For each row, this script:
   1. Reads the source markdown file and splits into code blocks.
@@ -29,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -37,10 +45,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from eval.executor import execute_webppl
 from eval.io import write_jsonl
+from eval.metrics import empirical_tv
 from scripts.extract_atoms import (
     classify_answer, find_last_expression, split_blocks,
     strip_viz_print, wrap_with_answer,
 )
+
+# Second seed used by the determinism gate; chosen far from 42 so any
+# `flip`/`gaussian`/... call that leaks into a `value`-shape GT produces a
+# different sample stream.
+_DETERMINISM_SEED = 1337
+_DUP_VARS_SCRIPT = Path(__file__).resolve().parent / "_check_dup_vars.js"
+# TV threshold above which two seeded runs of a samples-shape GT are
+# considered "the GT can't agree with itself," meaning the eval comparison
+# (which uses the same metric) can't ever score it well. 0.5 is the same
+# cutoff as the eval's worst non-degenerate bucket ("X").
+_SAMPLES_SELF_TV_MAX = 0.5
 
 
 # Display/canvas/print stubs are provided by the executor as preloaded
@@ -76,8 +96,8 @@ def _resolve_source(repo_root: Path, src: str) -> Path:
 def _assemble_program(picked_codes: list[str], wrap_target: str | None) -> tuple[str | None, str | None]:
     """Return (wrapped_program, error). wrapped_program ends with var ANSWER = ...;"""
     body = "\n\n".join(picked_codes).strip()
-    if not body:
-        return None, "all listed blocks are empty"
+    if not body and not wrap_target:
+        return None, "all listed blocks are empty and no wrap_target provided"
     if wrap_target:
         wt = wrap_target.strip().rstrip(";").strip()
         # If the source's trailing expression is literally the same as the
@@ -112,6 +132,78 @@ def _strip_trailing_match(body: str, wrap_target: str) -> str:
     if body_no_semi.endswith(target):
         return body_no_semi[: -len(target)].rstrip()
     return body
+
+
+def _find_duplicate_top_vars(code: str) -> list[dict] | None:
+    """Return a list of {name, lines} for top-level `var X` declared >1 time.
+
+    Returns None when the parse helper can't run (no node, missing script, or
+    parser error) — callers should treat that as "gate unavailable" and let
+    the atom through rather than rejecting on a tooling fault.
+    """
+    if not _DUP_VARS_SCRIPT.exists():
+        return None
+    try:
+        r = subprocess.run(
+            ["node", str(_DUP_VARS_SCRIPT)],
+            input=code, capture_output=True, text=True, timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    try:
+        payload = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not payload.get("ok"):
+        return None
+    return payload.get("dupes") or []
+
+
+def _check_samples_self_consistency(wrapped: str, first_answer, *, timeout: int) -> tuple[bool, str | None]:
+    """Re-run a samples-shape GT at a different seed; True iff TV between
+    the two empirical distributions is below `_SAMPLES_SELF_TV_MAX`.
+
+    Catches atoms where the eval pipeline can't score generated samples
+    against the GT because the GT itself is too noisy across seeds — either
+    because the generating distribution has unconditioned random parameters
+    (dippl-05-particlefilter/atom-4: random mixture per run) or because the
+    "samples" are actually a structured sequence whose values almost never
+    collide on exact keys (atom-2/atom-3: continuous random walks).
+    """
+    if not isinstance(first_answer, list):
+        return True, None  # nothing to compare; let it through
+    result = execute_webppl(wrapped, timeout=timeout, random_seed=_DETERMINISM_SEED)
+    if not (result.success and result.answer is not None):
+        return False, f"samples self-consistency re-run failed: {result.error_message or 'no answer'}"
+    if not isinstance(result.answer, list):
+        return False, f"samples self-consistency: second run returned non-list ({type(result.answer).__name__})"
+    tv = empirical_tv(first_answer, result.answer)
+    if tv is None:
+        return True, None
+    if tv > _SAMPLES_SELF_TV_MAX:
+        return False, (
+            f"samples self-consistency failed: TV(seed=42, seed={_DETERMINISM_SEED}) "
+            f"= {tv:.3f} > {_SAMPLES_SELF_TV_MAX} (GT's own seeded runs can't agree; "
+            f"eval against generated code can't score better than this)"
+        )
+    return True, None
+
+
+def _check_value_determinism(wrapped: str, first_answer, *, timeout: int) -> tuple[bool, str | None]:
+    """Re-run the GT with a different seed; True iff the answer is byte-equal.
+
+    Only meaningful for `value`-shape atoms — sampled/distribution-shape GTs
+    legitimately depend on the seed. On executor failure, returns
+    (False, error) so the atom lands in broken with a clear reason.
+    """
+    result = execute_webppl(wrapped, timeout=timeout, random_seed=_DETERMINISM_SEED)
+    if not (result.success and result.answer is not None):
+        return False, f"determinism re-run failed: {result.error_message or 'no answer'}"
+    if result.answer == first_answer:
+        return True, None
+    return False, f"value differs across seeds (seed=42 vs seed={_DETERMINISM_SEED}): {first_answer!r} vs {result.answer!r}"
 
 
 def assemble(emissions_path: Path, output_path: Path, broken_path: Path,
@@ -166,7 +258,62 @@ def assemble(emissions_path: Path, output_path: Path, broken_path: Path,
             })
             continue
 
-        shape, mode = classify_answer(result.answer)
+        # Gate: duplicate top-level `var X` declarations. Overlapping
+        # source_block_indices stitch together GTs that compile by accident
+        # (JS allows duplicate `var`), but the prompt can't tell the LM
+        # which definition is canonical — see dippl-04-factorseq/atom-1.
+        dupes = _find_duplicate_top_vars(wrapped)
+        if dupes:
+            broken.append({
+                **em,
+                "error": f"duplicate top-level var declarations: {dupes}",
+                "wrapped_code": wrapped,
+            })
+            continue
+
+        shape_override = em.get("answer_shape")
+        if shape_override is not None:
+            if shape_override not in ("value", "distribution", "samples"):
+                broken.append({
+                    **em,
+                    "error": f"invalid answer_shape override: {shape_override!r} (expected value/distribution/samples)",
+                    "wrapped_code": wrapped,
+                })
+                continue
+            shape, mode = shape_override, shape_override
+        else:
+            shape, mode = classify_answer(result.answer)
+
+        # Gate: a `value`-shape answer must be deterministic — otherwise the
+        # comparator demands exact-equality on a stochastic output, which is
+        # untestable by design (see dippl-02-webppl/atom-1: `geometric(0.5)`
+        # shaped as value).
+        if shape == "value":
+            ok_det, det_err = _check_value_determinism(wrapped, result.answer, timeout=timeout)
+            if not ok_det:
+                broken.append({
+                    **em,
+                    "error": det_err,
+                    "wrapped_code": wrapped,
+                    "answer_at_seed_42": result.answer,
+                })
+                continue
+
+        # Gate: a `samples`-shape answer must agree with itself across seeds
+        # under the same TV metric the eval uses. Otherwise the eval can't
+        # score generated code better than the GT's own self-noise — see
+        # dippl-05-particlefilter/{atom-2,3,4}.
+        if shape == "samples":
+            ok_s, s_err = _check_samples_self_consistency(wrapped, result.answer, timeout=timeout)
+            if not ok_s:
+                broken.append({
+                    **em,
+                    "error": s_err,
+                    "wrapped_code": wrapped,
+                    "answer_at_seed_42": result.answer,
+                })
+                continue
+
         atom = {
             "id": em_id,
             "source": src,
