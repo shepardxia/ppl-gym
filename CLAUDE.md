@@ -80,14 +80,7 @@ WebPPL packages in `eval/deps/` are loaded via `--require` for every run:
 
 ## Atom curation
 
-- **`scripts/assemble_curated.py`** is the current pipeline. Agents emit a JSONL of `{id, source, source_block_indices, prompt, wrap_target, answer_shape?, notes}`; the script concats listed code blocks from source markdown, appends `var ANSWER = (<wrap_target>);`, executes via `execute_webppl(seed=42)`, and runs three gates before accepting the atom — emissions that fail any gate land in `_broken.jsonl`. Agents own *judgment* (chunking, prompt wording, helper inlining); the pipeline owns mechanics.
-
-  Gates:
-  - **Determinism** — re-runs every `value`-shape GT at a second seed; rejects if outputs differ (catches stochastic primitives shaped as value).
-  - **Dedup** — parses the assembled GT via `scripts/_check_dup_vars.js` (node + webppl's bundled esprima); rejects atoms with duplicate top-level `var X` (catches `///fold:` block-overlap).
-  - **Samples self-consistency** — re-runs every `samples`-shape GT at a second seed; rejects if TV between the two empirical distributions > 0.5 (catches trajectories-as-samples and unconditioned-random-parameter generators).
-
-  When `answer_shape` is provided in an emission it overrides the heuristic in `classify_answer`. The agent brief codifying all four curation rules (the three gates + prompt/wrap_target coherence) lives at `data/curated_v3/_AGENT_BRIEF.md` — start there before invoking the curation subagent for a new corpus.
+- **`scripts/assemble_curated.py`** is the current pipeline. Agents emit a JSONL of `{id, source, source_block_indices, prompt, wrap_target, notes}`; the script concats listed code blocks from source markdown, appends `var ANSWER = (<wrap_target>);`, executes via `execute_webppl(seed=42)`, and emits a fully-formed atom on success or a broken record on failure. Agents own *judgment* (chunking, prompt wording, helper inlining); the pipeline owns mechanics.
 
   ```bash
   PYTHONPATH=. .venv/bin/python -m scripts.assemble_curated \
