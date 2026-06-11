@@ -90,7 +90,7 @@ npm run db:migrate:remote       # apply migrations to remote D1 (production!)
 
 - Build runs with **CWD = `web/`**. `src/lib/problems.ts` resolves `process.cwd() + '/..'` to find the dataset; do not change to `import.meta.url`-based resolution (vite bundles the file into `dist/_worker.js/chunks/` and the relative path breaks).
 - The site reads `data/problems/*.jsonl`, `data/realizations/webppl.jsonl`, and the two gate reports at build time. Status tones live in `src/lib/tones.ts`.
-- Feedback rows still use the D1 column `atom_id`; its value is now a `problem_id`. The name-entry modal markup is inlined in `ProblemDetail.astro` (`#name-modal` ids consumed by `public/feedback.js`).
+- The name-entry modal markup is inlined in `ProblemDetail.astro` (`#name-modal` ids consumed by `public/feedback.js`).
 - `dist/.assetsignore` (sourced from `public/.assetsignore`) excludes `_worker.js` and `_routes.json` from the static-asset upload — without it, `wrangler deploy` refuses to upload because it would expose server code.
 - D1 binding: `env.DB` (`ppl-gym-feedback`, id in `wrangler.toml`). Schema in `migrations/0001_init.sql`. R2 binding is commented out pending `wrangler r2 bucket create ppl-gym-backups`; backups will live in a separate `ppl-gym-backup` Worker, not this one.
 - **Local D1 state gotcha**: `wrangler dev --persist-to <path>` and `wrangler d1 migrations apply --local` must use the SAME persist path or they read different SQLite files (silent "no such table" at POST time). Default is `.wrangler/state/v3`; pass `--persist-to` to both or neither.

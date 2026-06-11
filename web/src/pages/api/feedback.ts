@@ -3,8 +3,7 @@ import type { APIRoute } from 'astro';
 type Vote = 'up' | 'down' | 'neutral';
 
 interface FeedbackBody {
-  // D1 column name kept from the atom era; the value is a problem_id.
-  atom_id: string;
+  problem_id: string;
   collection: string;
   dataset_version: string;
   rater_id: string;
@@ -24,7 +23,7 @@ function bad(msg: string, status = 400) {
 
 type FieldSpec = { key: keyof FeedbackBody; max: number; required?: boolean };
 const FIELD_SPECS: FieldSpec[] = [
-  { key: 'atom_id', max: 256 },
+  { key: 'problem_id', max: 256 },
   { key: 'collection', max: 64 },
   { key: 'dataset_version', max: 64 },
   { key: 'rater_id', max: 64 },
@@ -63,11 +62,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
   await db
     .prepare(
       `INSERT INTO feedback
-       (atom_id, collection, dataset_version, rater_id, rater_name, vote, comment, visibility)
+       (problem_id, collection, dataset_version, rater_id, rater_name, vote, comment, visibility)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'private')`,
     )
     .bind(
-      body.atom_id, body.collection, body.dataset_version,
+      body.problem_id, body.collection, body.dataset_version,
       body.rater_id, body.rater_name, body.vote, body.comment ?? '',
     )
     .run();
