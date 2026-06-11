@@ -24,7 +24,7 @@ Two halves:
 
 - Always use **`uv`** for package management: `uv pip install ...`, `uv sync`. The repo has no `pyproject.toml`; deps are pinned in `.venv/`.
 - Always run scripts via **`.venv/bin/python`** — bare `python` may pick up conda. Tests / modules: `PYTHONPATH=. .venv/bin/python -m eval.<module>`.
-- Tests: `PYTHONPATH=. .venv/bin/python -m pytest tests/ -q` (128, fast; covers algebra, render, score smoke).
+- Tests: `PYTHONPATH=. .venv/bin/python -m pytest tests/ -q` (131, fast; covers algebra, render, gate report mechanics, score smoke, status-vocabulary drift).
 - WebPPL itself is a system binary (`webppl` on `$PATH`, currently from miniconda). The executor shells out to it.
 
 ## Eval pipeline (run order)
@@ -75,6 +75,8 @@ WebPPL packages in `eval/deps/` are loaded via `--require` for every run:
 ## Web app (`web/`)
 
 Astro 5 + `@astrojs/cloudflare` adapter. Static prerendered problem pages (`/p/<slug>/`, slug = problem_id with `/`→`__`); a single SSR endpoint `POST /api/feedback` writes to D1.
+
+**Pushes to `main` auto-deploy** via Cloudflare's Git integration (no GitHub Actions in the repo — it's configured in the Cloudflare dashboard). Treat every push as a production deploy; D1 migrations must be applied remotely (`npm run db:migrate:remote`) before or with any push whose worker code needs the new schema.
 
 Build / deploy / dev:
 

@@ -19,9 +19,15 @@ export function statusTone(status: string | null | undefined): StatusTone {
     case 'ok':           return 'good';
     case 'ill_posed':    return 'bad';
     case 'error':        return 'bad';
+    // judge()/score statuses
+    case 'pass':         return 'good';
+    case 'fail':         return 'bad';
+    case 'malformed':    return 'bad';
+    case 'exec_error':   return 'bad';
     // Problem review statuses
     case 'reviewed':     return 'good';
     case 'draft':        return 'warn';
+    case 'retired':      return 'na';
     default:             return 'na';
   }
 }

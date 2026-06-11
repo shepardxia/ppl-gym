@@ -46,10 +46,12 @@ Design rationale and migration plan: `data/REDESIGN.md`.
 {
   "problem_id": "probmods2-conditioning/ex5.b",
   "language": "webppl",
-  "code": "var model = ... var ANSWER = Infer(...);",
-  "gate": {"passed": true, "floor": 0.0, "details": "..."}
+  "code": "var model = ... var ANSWER = Infer(...);"
 }
 ```
+
+Gate results live in the report JSONLs (`data/problems/_gate_report.jsonl`,
+`_gate_solver_report.jsonl`), keyed by problem_id — not on the realization record.
 
 A realization's code must produce `ANSWER` **via the language's own modeling/inference
 machinery**. Serializer limitations are binding bugs, never prompt workarounds.
@@ -153,7 +155,7 @@ Defined on the object, between **any** pair of representations:
 
 ### Tolerance: measured, not authored
 
-The gate runs every GT realization at k seeds (k≥2 required; k=2 exact, k=5 sampled).
+The gate runs every GT realization at k seeds (k≥2 required; defaults: k=5 for single-run answers, k=3 blocks of N seeded runs for draws-protocol specs).
 Calling `verdict()` with fewer than 2 GT runs raises `AlgebraError`. The problem's
 **GT noise floor** = max pairwise distance among GT runs (`noise_floor(gts, spec)`).
 The **candidate self-noise** = W1 between the first and second half of a Cloud candidate

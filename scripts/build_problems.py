@@ -53,7 +53,7 @@ def merge_emissions(paths: list[Path]) -> None:
                    "statement": e["statement"], "answer_spec": e["answer_spec"],
                    "status": e["status"]}
         by_corpus.setdefault(CORPUS_PREFIXES[prefix], []).append(problem)
-        realizations.append({"problem_id": pid, **e["realization"], "gate": {}})
+        realizations.append({"problem_id": pid, **e["realization"]})
 
     for corpus, rows in by_corpus.items():
         out = Path(f"data/problems/{corpus}.jsonl")
