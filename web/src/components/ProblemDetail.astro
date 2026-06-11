@@ -1,0 +1,602 @@
+---
+import type { ProblemRecord } from '@/lib/problems';
+import { specChip } from '@/lib/problems';
+import { statusTone, statusLabel } from '@/lib/tones';
+import { renderCode, escapeHtml } from '@/lib/render';
+
+interface Props {
+  record: ProblemRecord;
+}
+const { record } = Astro.props;
+const { problem, realization, gateA, gateB } = record;
+
+const chip     = specChip(problem.answer_spec);
+const toneA    = statusTone(gateA?.status);
+const toneB    = statusTone(gateB?.status);
+const toneR    = statusTone(problem.status.review);
+
+const specJson = JSON.stringify(problem.answer_spec, null, 2);
+const codeHtml = realization?.code ? renderCode(realization.code, 'webppl') : null;
+
+function fmtDist(arr: unknown[] | undefined): string {
+  if (!arr || arr.length === 0) return '—';
+  const formatted = arr.map((v) => (v != null && typeof v === 'number') ? v.toFixed(4) : String(v));
+  return '[' + formatted.join(', ') + ']';
+}
+function fmtNum(v: number | undefined): string {
+  if (v == null) return '—';
+  return v.toFixed(4);
+}
+---
+
+<article class="problem-detail">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header class="pd-header">
+    <div class="pd-id-row">
+      <a class="pd-back" href="/">← all problems</a>
+    </div>
+    <h1 class="pd-title">{problem.problem_id}</h1>
+    <div class="pd-chips">
+      <span class="chip chip-spec" title="answer spec">{chip}</span>
+      {gateB && (
+        <span class={`chip chip-tone-${toneB}`} title="phase-B solver gate">
+          solver: {statusLabel(gateB.status)}
+        </span>
+      )}
+      {gateA && (
+        <span class={`chip chip-tone-${toneA}`} title="phase-A GT gate">
+          GT gate: {statusLabel(gateA.status)}
+        </span>
+      )}
+      <span class={`chip chip-tone-${toneR}`} title="review status">
+        {statusLabel(problem.status.review)}
+      </span>
+    </div>
+    {problem.provenance.source && (
+      <div class="pd-provenance">
+        source: <code class="pd-source-code">{problem.provenance.source}</code>
+        · origin language: <code class="pd-source-code">{problem.provenance.origin_language}</code>
+      </div>
+    )}
+  </header>
+
+  <!-- ── Statement ──────────────────────────────────────────────────────── -->
+  <section class="pd-section">
+    <div class="section-title">
+      <span class="section-title-num">01</span>
+      <span>statement</span>
+    </div>
+
+    <div class="stmt-grid">
+      <div class="stmt-field">
+        <div class="stmt-field-hd">given</div>
+        <p class="stmt-field-body">{problem.statement.given}</p>
+      </div>
+      <div class="stmt-field">
+        <div class="stmt-field-hd">model</div>
+        <p class="stmt-field-body">{problem.statement.model}</p>
+      </div>
+      <div class="stmt-field">
+        <div class="stmt-field-hd">query</div>
+        <p class="stmt-field-body">{problem.statement.query}</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Answer Spec ────────────────────────────────────────────────────── -->
+  <section class="pd-section">
+    <div class="section-title">
+      <span class="section-title-num">02</span>
+      <span>answer spec</span>
+      <span class="section-title-meta">{chip}</span>
+    </div>
+    <Fragment set:html={renderCode(specJson, 'json')} />
+  </section>
+
+  <!-- ── Realization (WebPPL code) ──────────────────────────────────────── -->
+  <section class="pd-section">
+    <div class="section-title">
+      <span class="section-title-num">03</span>
+      <span>WebPPL realization</span>
+    </div>
+    {codeHtml ? (
+      <Fragment set:html={codeHtml} />
+    ) : (
+      <p class="pd-empty">No realization available.</p>
+    )}
+  </section>
+
+  <!-- ── Gate panel ─────────────────────────────────────────────────────── -->
+  <section class="pd-section">
+    <div class="section-title">
+      <span class="section-title-num">04</span>
+      <span>gate results</span>
+    </div>
+
+    <div class="gate-panel">
+      <!-- Phase-A row -->
+      <div class="gate-row">
+        <div class="gate-row-hd">
+          <span class="gate-phase-label">phase-A</span>
+          <span class="gate-row-desc">GT determinism / floor check</span>
+        </div>
+        {gateA ? (
+          <div class="gate-row-cells">
+            <div class="gate-cell">
+              <span class="gate-cell-key">status</span>
+              <span class={`chip chip-tone-${toneA}`}>{statusLabel(gateA.status)}</span>
+            </div>
+            {gateA.floor != null && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">floor</span>
+                <span class="gate-cell-val">{fmtNum(gateA.floor)}</span>
+              </div>
+            )}
+            {gateA.metric && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">metric</span>
+                <span class="gate-cell-val">{gateA.metric}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p class="pd-empty gate-empty">No phase-A data.</p>
+        )}
+      </div>
+
+      <!-- Phase-B row -->
+      <div class="gate-row">
+        <div class="gate-row-hd">
+          <span class="gate-phase-label">phase-B</span>
+          <span class="gate-row-desc">solver re-derivation agreement</span>
+        </div>
+        {gateB ? (
+          <div class="gate-row-cells">
+            <div class="gate-cell">
+              <span class="gate-cell-key">status</span>
+              <span class={`chip chip-tone-${toneB}`}>{statusLabel(gateB.status)}</span>
+            </div>
+            {gateB.n_pass != null && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">n_pass</span>
+                <span class="gate-cell-val">{gateB.n_pass}</span>
+              </div>
+            )}
+            {gateB.distances && gateB.distances.length > 0 && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">distances</span>
+                <span class="gate-cell-val gate-cell-mono">{fmtDist(gateB.distances)}</span>
+              </div>
+            )}
+            {gateB.solver_agree_distance != null && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">solver agree dist</span>
+                <span class="gate-cell-val">{fmtNum(gateB.solver_agree_distance)}</span>
+              </div>
+            )}
+            {gateB.gt_floor != null && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">GT floor</span>
+                <span class="gate-cell-val">{fmtNum(gateB.gt_floor)}</span>
+              </div>
+            )}
+            {gateB.gate_model && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">gate model</span>
+                <span class="gate-cell-val">{gateB.gate_model}</span>
+              </div>
+            )}
+            {gateB.timeout != null && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">timeout</span>
+                <span class="gate-cell-val">{gateB.timeout}s</span>
+              </div>
+            )}
+            {gateB.memorization_suspect && (
+              <div class="gate-cell">
+                <span class="chip chip-tone-warn">memorization suspect</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p class="pd-empty gate-empty">No phase-B data.</p>
+        )}
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Notes ──────────────────────────────────────────────────────────── -->
+  {problem.status.notes && (
+    <section class="pd-section">
+      <div class="section-title">
+        <span class="section-title-num">05</span>
+        <span>notes</span>
+      </div>
+      <p class="pd-notes">{problem.status.notes}</p>
+    </section>
+  )}
+
+  <!-- ── Feedback ───────────────────────────────────────────────────────── -->
+  <section
+    class="fb pd-section"
+    data-fb-atom={problem.problem_id}
+    data-fb-collection={record.corpus}
+    data-fb-dataset-version="problems-v1"
+  >
+    <div class="section-title">
+      <span class="section-title-num">★</span>
+      <span>feedback on this problem</span>
+    </div>
+    <div class="fb-row">
+      <button type="button" class="fb-btn is-up" data-vote="up" aria-label="Looks right">
+        <span aria-hidden="true">👍</span><span>looks right</span>
+      </button>
+      <button type="button" class="fb-btn is-down" data-vote="down" aria-label="Issue">
+        <span aria-hidden="true">👎</span><span>issue</span>
+      </button>
+      <span class="fb-name">
+        <span class="fb-name-empty">no name set</span>
+        <span class="fb-name-filled" hidden>rating as <b class="fb-name-text"></b><span class="fb-edit">✎</span></span>
+      </span>
+    </div>
+    <div class="fb-comment">
+      <textarea placeholder="optional note — what's right or wrong about this problem?"></textarea>
+      <div class="fb-comment-row">
+        <button type="button" class="fb-btn fb-primary fb-submit">save comment</button>
+        <span class="fb-status"></span>
+      </div>
+    </div>
+  </section>
+
+</article>
+
+<!-- Name modal — shared with feedback.js -->
+<div class="modal-back" id="name-modal" role="dialog" aria-labelledby="name-modal-title">
+  <div class="modal">
+    <h2 id="name-modal-title">Credit your feedback as?</h2>
+    <p>Stays attached to feedback you give from this browser. No login, no email.</p>
+    <input type="text" id="name-modal-input" maxlength="60" placeholder="e.g. shepard" autocomplete="off" />
+    <div class="modal-buttons">
+      <button type="button" id="name-modal-cancel">cancel</button>
+      <button type="button" id="name-modal-save" class="primary">save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/feedback.js" is:inline></script>
+
+<style>
+.problem-detail {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+.pd-back {
+  font-size: 12px;
+  color: var(--fg-dim);
+  text-decoration: none;
+  font-family: var(--font-mono);
+}
+.pd-back:hover { color: var(--accent); }
+
+.pd-id-row { margin-bottom: 12px; }
+
+.pd-title {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.pd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.pd-provenance {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-bottom: 4px;
+}
+
+.pd-source-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--code-bg);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+.pd-section {
+  margin-top: 36px;
+}
+
+.pd-empty {
+  color: var(--fg-dim);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+
+.pd-notes {
+  font-size: 13px;
+  color: var(--fg-mid);
+  line-height: 1.6;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+/* ── Statement grid ──────────────────────────────────────────────────────── */
+.stmt-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.stmt-field {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 14px;
+}
+
+.stmt-field-hd {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-dim);
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+}
+
+.stmt-field-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fg);
+}
+
+/* ── Gate panel ──────────────────────────────────────────────────────────── */
+.gate-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.gate-row {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 14px;
+}
+
+.gate-row-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.gate-phase-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+}
+
+.gate-row-desc {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.gate-row-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  align-items: center;
+}
+
+.gate-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gate-cell-key {
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gate-cell-val {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.gate-cell-mono {
+  font-size: 11px;
+}
+
+.gate-empty {
+  margin: 0;
+}
+
+/* ── Chip styles ─────────────────────────────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.chip-spec {
+  color: var(--fg-mid);
+  background: var(--bg-elev-2);
+  border-color: var(--border);
+}
+
+.chip-tone-good {
+  color: var(--tone-good-fg);
+  background: var(--tone-good-bg);
+  border-color: var(--tone-good-bd);
+}
+.chip-tone-warn {
+  color: var(--tone-ok-fg);
+  background: var(--tone-ok-bg);
+  border-color: var(--tone-ok-bd);
+}
+.chip-tone-bad {
+  color: var(--tone-bad-fg);
+  background: var(--tone-bad-bg);
+  border-color: var(--tone-bad-bd);
+}
+.chip-tone-na {
+  color: var(--fg-faint);
+  background: var(--tone-na-bg);
+  border-color: var(--tone-na-bd);
+}
+
+/* ── Feedback widget ─────────────────────────────────────────────────────── */
+.fb { margin-top: 36px; }
+
+.fb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.fb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+.fb-btn:hover { background: var(--bg-elev-2); }
+.fb-btn.active.is-up { background: var(--tone-good-bg); border-color: var(--tone-good-bd); color: var(--tone-good-fg); }
+.fb-btn.active.is-down { background: var(--tone-bad-bg); border-color: var(--tone-bad-bd); color: var(--tone-bad-fg); }
+
+.fb-primary {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.fb-primary:hover { background: var(--accent); color: white; }
+
+.fb-name {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-left: auto;
+}
+.fb-edit { margin-left: 5px; cursor: pointer; color: var(--accent); }
+
+.fb-comment {
+  margin-top: 10px;
+}
+.fb-comment textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  resize: vertical;
+}
+.fb-comment-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.fb-status { font-size: 12px; color: var(--fg-dim); }
+.fb-status.is-ok { color: var(--tone-good-fg); }
+.fb-status.is-err { color: var(--tone-bad-fg); }
+
+/* ── Name modal ──────────────────────────────────────────────────────────── */
+.modal-back {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-back.open { display: flex; }
+
+.modal {
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 24px 28px;
+  max-width: 380px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+}
+.modal h2 { margin: 0 0 8px; font-size: 15px; }
+.modal p { font-size: 13px; color: var(--fg-mid); margin: 0 0 14px; }
+.modal input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  font-family: var(--font-mono);
+}
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.modal-buttons button {
+  padding: 6px 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 13px;
+}
+.modal-buttons button.primary {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+</style>

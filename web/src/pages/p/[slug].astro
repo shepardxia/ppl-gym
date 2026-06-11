@@ -1,0 +1,21 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import ProblemDetail from '@/components/ProblemDetail.astro';
+import { loadAllProblems, problemSlug, type ProblemRecord } from '@/lib/problems';
+
+export const prerender = true;
+
+export async function getStaticPaths() {
+  const problems = await loadAllProblems();
+  return problems.map((rec) => ({
+    params: { slug: problemSlug(rec.problem.problem_id) },
+    props: { record: rec },
+  }));
+}
+
+const { record } = Astro.props as { record: ProblemRecord };
+---
+
+<Layout title={`${record.problem.problem_id} — ppl-gym`}>
+  <ProblemDetail record={record} />
+</Layout>

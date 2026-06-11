@@ -1,9 +1,9 @@
-"""Prompt formatting and response parsing for atom-based eval.
+"""System-prompt assembly and response parsing for problem-centric eval.
 
-Each atom has its own self-contained prompt; the LLM responds with one
-fenced WebPPL block. The system prompt optionally includes a small WebPPL
-primer to level the playing field across models that may not have seen
-much WebPPL in pretraining.
+`eval.render.render_problem` produces the user message; this module owns the
+language-specific system prompt (base + primer) and extracts the fenced code
+block from the LLM response. The primer levels the playing field across models
+that may not have seen much WebPPL in pretraining.
 """
 
 from __future__ import annotations
@@ -12,11 +12,7 @@ import re
 from pathlib import Path
 
 
-PROMPT_VERSION = "v2-atom"
-
-# Source of truth for the prompt text lives in data/prompts/. The web UI
-# reads the same files at build time so the model and the browser see
-# byte-identical strings.
+# Source of truth for the prompt text lives in data/prompts/.
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "data" / "prompts"
 
 SYSTEM_PROMPT_BASE = (_PROMPTS_DIR / "system_base.txt").read_text().rstrip("\n")
@@ -57,19 +53,6 @@ def system_prompt(*, with_primer: bool = True, language: str = "webppl") -> str:
     if with_primer:
         return base + "\n\n" + _primer_for(language)
     return base
-
-
-def format_messages(atom: dict, *, with_primer: bool = True) -> list[dict]:
-    """Return [system, user] messages for one atom.
-
-    The atom's optional `language` field (defaults to "webppl") selects the
-    appropriate system prompt + primer.
-    """
-    language = atom.get("language", "webppl")
-    return [
-        {"role": "system", "content": system_prompt(with_primer=with_primer, language=language)},
-        {"role": "user", "content": atom["prompt"]},
-    ]
 
 
 # ---------------------------------------------------------------------------

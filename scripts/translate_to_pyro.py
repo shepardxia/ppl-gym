@@ -1,4 +1,6 @@
-"""Translate WebPPL atoms to Pyro via Anthropic Batch API.
+"""LEGACY (atom-era). Translates atom-format JSONL; its data/pyro_v3/ output is known-bad (see CLAUDE.md). The P4 Pyro rebuild derives realizations from data/problems/ instead — do not extend this script.
+
+Translate WebPPL atoms to Pyro via Anthropic Batch API.
 
 For each input atom:
   1. Send (WebPPL prompt + WebPPL GT code + WebPPL GT output) to the model

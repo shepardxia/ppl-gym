@@ -1,7 +1,7 @@
 """Pyro executor.
 
 Contract: the user program ends by assigning to top-level `ANSWER`. The
-harness wraps the program with a serializer that JSON-stringifies the
+caller wraps the program with a serializer that JSON-stringifies the
 binding using the same cross-PPL schema as `executor.py` (WebPPL), so
 metrics/web app code is unchanged.
 
@@ -17,7 +17,7 @@ Output schema (must match `executor.py`):
   - a `torch.distributions.Distribution` (same)
   - a Python primitive / list / dict / tuple
   - a `torch.Tensor` (scalar or vector)
-  - a list of samples (returned as-is; harness re-aggregates)
+  - a list of samples (returned as-is; the caller re-aggregates — see eval/gate.collect_gt_answers)
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def __serialize(x):
             return {"__kind": "distribution_continuous", "repr": _continuous_repr(x)}
         # log_prob can return a tensor of shape [support_size] or [support_size, ...] (batched).
         log_p = x.log_prob(sup)
-        # Reduce any batch dims by summing (no batch dim expected in our atom usage).
+        # Reduce any batch dims by summing (no batch dim expected in our usage).
         probs = log_p.exp().detach()
         if probs.dim() > 1:
             probs = probs.view(probs.shape[0], -1).mean(dim=1)

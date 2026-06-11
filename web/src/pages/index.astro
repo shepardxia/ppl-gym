@@ -1,30 +1,241 @@
 ---
 import Layout from '@/layouts/Layout.astro';
-import { loadAllCollections } from '@/lib/atoms';
+import {loadAllProblemsGrouped, problemSlug, specChip, CORPORA } from '@/lib/problems';
+import { statusTone, statusLabel } from '@/lib/tones';
 
 export const prerender = true;
 
-const collections = await loadAllCollections();
+const grouped = await loadAllProblemsGrouped();
+
+const CORPUS_META: Record<string, { label: string; description: string }> = {
+  probmods2: {
+    label: 'ProbMods2',
+    description: 'Exercises from probmods.org — Bayesian cognition & probabilistic inference.',
+  },
+  dippl: {
+    label: 'DIPPL',
+    description: 'Exercises from dippl.org — Church/WebPPL semantics & enumeration.',
+  },
+  forestdb: {
+    label: 'forestdb',
+    description: 'Published WebPPL models from forestdb.org — RSA, cognition, social reasoning.',
+  },
+};
+
 ---
 
-<Layout title="ppl-gym — atom browser">
-  <div class="home">
-    <h1>ppl-gym</h1>
-    <p class="tagline">
-      A benchmark of self-contained WebPPL exercises for evaluating LLMs on probabilistic programming.
-      Pick a collection to browse, inspect runs, and leave feedback.
-    </p>
-    <div class="collection-grid">
-      {collections.map((c) => (
-        <a class="collection-card" href={`/c/${c.collection.slug}`}>
-          <h3>{c.collection.label}</h3>
-          <div class="cdesc">{c.collection.description ?? c.collection.jsonlPath}</div>
-          <div class="cmeta">
-            <b>{c.atoms.length}</b> atoms · {Object.keys(c.runs).length} runs
-            {c.primary && (<Fragment> · primary {c.primary.id}</Fragment>)}
+<Layout title="ppl-gym — problem browser">
+  <div class="home-wrap">
+    <header class="home-header">
+      <div class="brand">
+        <span class="brand-mark"><span>{'{'}</span><span class="brand-mark-tilde">~</span><span>{'}'}</span></span>
+        <span class="brand-name">ppl<span class="brand-name-dim">·</span>gym</span>
+      </div>
+      <p class="home-tagline">
+        A benchmark of probabilistic-programming problems for evaluating LLMs.
+        Browse problems, inspect gate results, and leave feedback.
+      </p>
+    </header>
+
+    {CORPORA.map((corpus) => {
+      const records = grouped[corpus] ?? [];
+      const meta = CORPUS_META[corpus];
+      if (records.length === 0) return null;
+      return (
+        <section class="corpus-section">
+          <div class="corpus-hd">
+            <h2 class="corpus-title">{meta.label}</h2>
+            <span class="corpus-count">{records.length} problems</span>
+            <p class="corpus-desc">{meta.description}</p>
           </div>
-        </a>
-      ))}
-    </div>
+          <table class="problem-table">
+            <thead>
+              <tr>
+                <th class="col-id">problem</th>
+                <th class="col-spec">spec</th>
+                <th class="col-gateA">phase-A</th>
+                <th class="col-gateB">phase-B</th>
+                <th class="col-review">review</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map(({ problem, gateA, gateB }) => {
+                const slug = problemSlug(problem.problem_id);
+                const chip = specChip(problem.answer_spec);
+                const toneA = statusTone(gateA?.status);
+                const toneB = statusTone(gateB?.status);
+                const toneR = statusTone(problem.status.review);
+                return (
+                  <tr class="problem-row" data-href={`/p/${slug}/`}>
+                    <td class="col-id">
+                      <a class="pid-link" href={`/p/${slug}/`}>{problem.problem_id}</a>
+                    </td>
+                    <td class="col-spec">
+                      <span class="chip chip-spec">{chip}</span>
+                    </td>
+                    <td class="col-gateA">
+                      {gateA ? (
+                        <span class={`chip chip-tone-${toneA}`}>{statusLabel(gateA.status)}</span>
+                      ) : (
+                        <span class="chip chip-tone-na">—</span>
+                      )}
+                    </td>
+                    <td class="col-gateB">
+                      {gateB ? (
+                        <span class={`chip chip-tone-${toneB}`}>{statusLabel(gateB.status)}</span>
+                      ) : (
+                        <span class="chip chip-tone-na">—</span>
+                      )}
+                    </td>
+                    <td class="col-review">
+                      <span class={`chip chip-tone-${toneR}`}>{statusLabel(problem.status.review)}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      );
+    })}
   </div>
+
+  <script is:inline>
+    // Make entire rows clickable.
+    document.querySelectorAll('.problem-row[data-href]').forEach((row) => {
+      row.style.cursor = 'pointer';
+      row.addEventListener('click', (e) => {
+        if (e.target.tagName === 'A') return;
+        window.location.href = row.dataset.href;
+      });
+    });
+  </script>
 </Layout>
+
+<style>
+.home-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+.home-header {
+  margin-bottom: 40px;
+}
+
+.home-tagline {
+  color: var(--fg-mid);
+  font-size: 14px;
+  margin: 8px 0 0;
+}
+
+.corpus-section {
+  margin-bottom: 48px;
+}
+
+.corpus-hd {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.corpus-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--fg);
+}
+
+.corpus-count {
+  font-size: 12px;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+}
+
+.corpus-desc {
+  width: 100%;
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--fg-mid);
+}
+
+.problem-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.problem-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.problem-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.problem-row:hover td {
+  background: var(--hover);
+}
+
+.col-id { width: 55%; }
+.col-spec { width: 15%; }
+.col-gateA, .col-gateB { width: 10%; }
+.col-review { width: 10%; }
+
+.pid-link {
+  color: var(--fg);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.pid-link:hover { color: var(--accent); text-decoration: underline; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.chip-spec {
+  color: var(--fg-mid);
+  background: var(--bg-elev-2);
+  border-color: var(--border);
+}
+
+.chip-tone-good {
+  color: var(--tone-good-fg);
+  background: var(--tone-good-bg);
+  border-color: var(--tone-good-bd);
+}
+.chip-tone-warn {
+  color: var(--tone-ok-fg);
+  background: var(--tone-ok-bg);
+  border-color: var(--tone-ok-bd);
+}
+.chip-tone-bad {
+  color: var(--tone-bad-fg);
+  background: var(--tone-bad-bg);
+  border-color: var(--tone-bad-bd);
+}
+.chip-tone-na {
+  color: var(--fg-faint);
+  background: var(--tone-na-bg);
+  border-color: var(--tone-na-bd);
+}
+</style>

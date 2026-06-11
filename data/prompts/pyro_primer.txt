@@ -70,7 +70,7 @@ Common inference patterns:
 Output value conventions:
   - `dist.Bernoulli(p)` has support `[0.0, 1.0]` — note these are floats, not booleans.
   - `dist.Categorical(probs=[p0,p1,p2])` has support `[0, 1, 2]` — integers.
-  - Continuous distributions don't have finite enumerable support; they serialize to a string repr and shouldn't be the `ANSWER` of a `distribution`-shape atom.
+  - Continuous distributions don't have finite enumerable support; don't use one as the `ANSWER` of a problem that expects a finite discrete distribution.
 
 Avoid:
   - `pyro.poutine`-based heavy machinery unless the problem genuinely requires SVI or MCMC.

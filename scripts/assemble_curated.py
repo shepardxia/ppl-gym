@@ -45,11 +45,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from eval.executor import execute_webppl
 from eval.io import write_jsonl
-from eval.metrics import empirical_tv
+from eval.algebra import canonicalize, distance, parse_spec
 from scripts.extract_atoms import (
     classify_answer, find_last_expression, split_blocks,
     strip_viz_print, wrap_with_answer,
 )
+
+def empirical_tv(gen_samples: list, gt_samples: list) -> float | None:
+    """TV between two empirical sample sets, via the canonical comparator."""
+    if not gen_samples or not gt_samples:
+        return None
+    spec = parse_spec({"kind": "dist", "domain": "finite"})
+    return distance(
+        canonicalize(gen_samples, spec), canonicalize(gt_samples, spec), spec
+    ).value
+
+
 
 # Second seed used by the determinism gate; chosen far from 42 so any
 # `flip`/`gaussian`/... call that leaks into a `value`-shape GT produces a

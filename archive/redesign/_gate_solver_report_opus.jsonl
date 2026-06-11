@@ -1,0 +1,5 @@
+{"problem_id": "forestdb-hlms-comparison-class/atom-1", "status": "gt_suspect", "n_pass": 0, "distances": [1.0, 1.0], "solver_agree_distance": 0.0, "gt_floor": 0.0, "memorization_suspect": false, "errors": []}
+{"problem_id": "forestdb-kachakeche-comparison-class/atom-1", "status": "accept", "n_pass": 1, "distances": [0.0, 0.326372], "solver_agree_distance": 0.326372, "gt_floor": 0.0, "memorization_suspect": false, "errors": []}
+{"problem_id": "probmods2-inference-algorithms/ex1.3", "status": "accept", "n_pass": 2, "distances": [0.223021, 0.223021], "solver_agree_distance": 0.0, "gt_floor": 0.240604, "memorization_suspect": false, "errors": []}
+{"problem_id": "probmods2-occams-razor/ex1.2", "status": "gt_suspect", "n_pass": 0, "distances": [0.089343, 0.089343], "solver_agree_distance": 0.0, "gt_floor": 0.0, "memorization_suspect": false, "errors": []}
+{"problem_id": "probmods2-occams-razor/ex1.3", "status": "gt_suspect", "n_pass": 0, "distances": [0.114284, 0.114284], "solver_agree_distance": 0.0, "gt_floor": 0.0, "memorization_suspect": false, "errors": []}

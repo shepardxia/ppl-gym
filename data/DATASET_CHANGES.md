@@ -1,5 +1,7 @@
 # Dataset Changes Log
 
+> Historical log (atom era). Scripts and modules referenced below — `build_atomized_v2.py`, `rebuild_prompts.py`, `eval/harness.py`, `eval/metrics.py` — were deleted in the P2 redesign; see `data/REDESIGN.md`.
+
 A running record of every change to `data/atomized_v2.jsonl` (the live
 eval dataset) and `data/atomized.jsonl` (the v1 untouched original).
 

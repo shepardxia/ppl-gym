@@ -1,51 +1,129 @@
-"""Submit atom generations as an Anthropic Message Batch (50% discount, async).
+"""Submit problem generations as an Anthropic Message Batch (50% discount, async).
 
-Each batch request has the atom's `id` as `custom_id`. After submission the
-batch is polled until ended; results are streamed back and written to the
-same JSONL format as eval.generate (one record per atom plus a summary
-trailer), so eval.score reads them transparently.
+Public API consumed by eval.gate:
+  build_requests(problems, language, model, n_solvers, max_tokens, temperature)
+  problem_id_to_cid(problem_id, slot)
+  cid_to_problem_slot(cid)
+  submit_batch(client, requests)
+  wait_for_batch(client, batch_id, ...)
+  collect_results(client, batch_id)
 
-Usage:
-    PYTHONPATH=. .venv/bin/python -m eval.generate_batch \\
-        --dataset data/atomized_v2.jsonl \\
-        --model claude-sonnet-4-6 \\
-        --output data/eval_runs/<run-id>/generations.jsonl \\
-        [--no-primer]
+CLI:
+  PYTHONPATH=. .venv/bin/python -m eval.generate_batch \\
+      --model <model> \\
+      --output <path/to/generations.jsonl> \\
+      [--ids ID ...] \\
+      [--language webppl] \\
+      [--n-samples 1] \\
+      [--no-poll]
+      [--collect BATCH_ID]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 
 from anthropic import Anthropic
 
-from eval.io import load_jsonl
-from eval.prompt import PROMPT_VERSION, format_messages, parse_response
+from eval.io import load_jsonl, write_jsonl
+from eval.prompt import parse_response, system_prompt
+from eval.render import render_problem
 
 
 DEFAULT_MAX_TOKENS = 4096
-DEFAULT_TEMPERATURE = 0.0
+DEFAULT_TEMPERATURE = 1.0
 POLL_INTERVAL = 30
 POLL_TIMEOUT = 3600  # 1 hour
 
+_DEFAULT_N_SOLVERS = 2
 
-def _atom_to_cid(atom_id: str) -> str:
-    """Encode atom id to satisfy ^[a-zA-Z0-9_-]{1,64}$."""
-    return atom_id.replace("/", "__").replace(".", "-")
 
+# ---------------------------------------------------------------------------
+# custom_id encoding
+# ---------------------------------------------------------------------------
+
+def problem_id_to_cid(problem_id: str, slot: int) -> str:
+    """Encode problem_id + slot → custom_id satisfying ^[a-zA-Z0-9_-]{1,64}$.
+
+    Encoding: '/' → '__', '.' → '_dot_'
+    These are invertible and safe: '__' does not appear in raw problem_ids,
+    '_dot_' does not conflict with the slot suffix '__s{n}'.
+    """
+    safe = problem_id.replace(".", "_dot_").replace("/", "__")
+    return f"{safe}__s{slot}"
+
+
+def cid_to_problem_slot(cid: str) -> tuple[str, int]:
+    """Reverse of problem_id_to_cid."""
+    m = re.match(r"^(.+)__s(\d+)$", cid)
+    if not m:
+        raise ValueError(f"cannot parse custom_id: {cid!r}")
+    problem_id = m.group(1).replace("__", "/").replace("_dot_", ".")
+    return problem_id, int(m.group(2))
+
+
+# ---------------------------------------------------------------------------
+# Request building
+# ---------------------------------------------------------------------------
+
+def build_requests(
+    problems: list[dict],
+    language: str = "webppl",
+    model: str = "claude-sonnet-4-6",
+    n_solvers: int = _DEFAULT_N_SOLVERS,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    temperature: float = DEFAULT_TEMPERATURE,
+) -> list[dict]:
+    """Build Anthropic batch request dicts (n_solvers per problem).
+
+    Returns a list of request dicts ready for submit_batch.
+    """
+    sys_text = system_prompt(with_primer=True, language=language)
+    system_blocks = [{
+        "type": "text",
+        "text": sys_text,
+        "cache_control": {"type": "ephemeral"},
+    }]
+
+    requests = []
+    for prob in problems:
+        user_text = render_problem(prob, language=language)
+        for slot in range(n_solvers):
+            cid = problem_id_to_cid(prob["problem_id"], slot)
+            requests.append({
+                "custom_id": cid,
+                "params": {
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "system": system_blocks,
+                    "messages": [{"role": "user", "content": user_text}],
+                },
+            })
+    return requests
+
+
+# ---------------------------------------------------------------------------
+# Batch mechanics
+# ---------------------------------------------------------------------------
 
 def submit_batch(client: Anthropic, requests: list[dict]) -> str:
     batch = client.messages.batches.create(requests=requests)
     return batch.id
 
 
-def wait_for_batch(client: Anthropic, batch_id: str, *,
-                   poll_interval: int = POLL_INTERVAL,
-                   timeout: int = POLL_TIMEOUT,
-                   verbose: bool = True) -> object:
+def wait_for_batch(
+    client: Anthropic,
+    batch_id: str,
+    *,
+    poll_interval: int = POLL_INTERVAL,
+    timeout: int = POLL_TIMEOUT,
+    verbose: bool = True,
+) -> object:
     t0 = time.time()
     while True:
         batch = client.messages.batches.retrieve(batch_id)
@@ -53,11 +131,13 @@ def wait_for_batch(client: Anthropic, batch_id: str, *,
         status = batch.processing_status
         counts = batch.request_counts
         if verbose:
-            print(f"  [{elapsed:5.0f}s] status={status} "
-                  f"processing={counts.processing} succeeded={counts.succeeded} "
-                  f"errored={counts.errored} canceled={counts.canceled} "
-                  f"expired={counts.expired}",
-                  flush=True)
+            print(
+                f"  [{elapsed:5.0f}s] status={status} "
+                f"processing={counts.processing} succeeded={counts.succeeded} "
+                f"errored={counts.errored} canceled={counts.canceled} "
+                f"expired={counts.expired}",
+                flush=True,
+            )
         if status == "ended":
             return batch
         if elapsed > timeout:
@@ -104,188 +184,156 @@ def collect_results(client: Anthropic, batch_id: str) -> dict:
     return out
 
 
-def run_batch_generation(
-    dataset_path: Path,
+# ---------------------------------------------------------------------------
+# Generation row writer
+# ---------------------------------------------------------------------------
+
+def _write_generation_rows(
+    problems: list[dict],
+    results: dict,
     output_path: Path,
     *,
     model: str,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
-    temperature: float = DEFAULT_TEMPERATURE,
-    with_primer: bool = True,
-    thinking_budget: int | None = None,
-    max_atoms: int | None = None,
-    ids: list[str] | None = None,
-    poll_interval: int = POLL_INTERVAL,
-    timeout: int = POLL_TIMEOUT,
-):
-    client = Anthropic()
-
-    atoms = load_jsonl(dataset_path)
-    if ids:
-        atoms = [a for a in atoms if a["id"] in set(ids)]
-    if max_atoms is not None:
-        atoms = atoms[:max_atoms]
-
+    language: str,
+    n_solvers: int,
+    batch_id: str,
+) -> None:
+    """Write generation rows to output_path (JSONL, no summary trailer)."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    suffix = ""
-    if not with_primer:
-        suffix += "-noprimer"
-    if thinking_budget is not None:
-        suffix += f"-think{thinking_budget}"
-    adapter_name = f"anthropic-batch:{model}{suffix}"
-
-    requests = []
-    for atom in atoms:
-        msgs = format_messages(atom, with_primer=with_primer)
-        system_msg = msgs[0]["content"]
-        user_msgs = [{"role": m["role"], "content": m["content"]} for m in msgs[1:]]
-        # System prompt is identical across all atoms in a batch — cache it.
-        # Cache write happens on the first request; subsequent reads are
-        # billed at ~10% of input rate.
-        system_blocks = [{
-            "type": "text",
-            "text": system_msg,
-            "cache_control": {"type": "ephemeral"},
-        }]
-        params = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "system": system_blocks,
-            "messages": user_msgs,
-        }
-        if thinking_budget is not None:
-            # Extended thinking requires temperature=1; ensure max_tokens
-            # leaves room for both thinking and the final answer.
-            params["temperature"] = 1.0
-            params["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
-        else:
-            params["temperature"] = temperature
-        requests.append({
-            "custom_id": _atom_to_cid(atom["id"]),
-            "params": params,
-        })
-
-    print(f"[batch] {adapter_name}: submitting {len(requests)} requests")
-    t_start = time.time()
-    batch_id = submit_batch(client, requests)
-    print(f"[batch] id={batch_id}")
-
-    print(f"[batch] polling every {poll_interval}s (timeout {timeout}s)")
-    wait_for_batch(client, batch_id, poll_interval=poll_interval, timeout=timeout)
-
-    print(f"[batch] streaming results")
-    results = collect_results(client, batch_id)
-    total_runtime = round(time.time() - t_start, 2)
-
-    total_in = total_out = total_cache_create = total_cache_read = n_ok = 0
     with open(output_path, "w") as f:
-        for atom in atoms:
-            cid = _atom_to_cid(atom["id"])
-            r = results.get(cid)
-            if r is None:
-                rec = {
-                    "id": atom["id"],
-                    "prompt_version": PROMPT_VERSION,
-                    "adapter": {"name": adapter_name, "error": "missing from batch results"},
-                    "generation": {"code": "", "raw_response": "",
-                                   "parse_warnings": ["missing from batch"]},
-                    "runtime_sec": 0.0,
-                }
-            else:
-                meta = r["meta"]
-                if r["ok"]:
-                    n_ok += 1
-                    total_in += meta.get("input_tokens") or 0
-                    total_out += meta.get("output_tokens") or 0
-                    total_cache_create += meta.get("cache_creation_input_tokens") or 0
-                    total_cache_read += meta.get("cache_read_input_tokens") or 0
-                rec = {
-                    "id": atom["id"],
-                    "prompt_version": PROMPT_VERSION,
-                    "adapter": {
-                        "name": adapter_name,
+        for prob in problems:
+            pid = prob["problem_id"]
+            for slot in range(n_solvers):
+                cid = problem_id_to_cid(pid, slot)
+                r = results.get(cid)
+                if r is None:
+                    row = {
+                        "problem_id": pid,
+                        "slot": slot,
                         "model": model,
-                        "with_primer": with_primer,
-                        "batch_id": batch_id,
-                        **meta,
-                    },
-                    "generation": {
+                        "language": language,
+                        "code": "",
+                        "warnings": ["missing from batch results"],
+                    }
+                else:
+                    row = {
+                        "problem_id": pid,
+                        "slot": slot,
+                        "model": model,
+                        "language": language,
                         "code": r["code"],
-                        "raw_response": r["raw"],
-                        "parse_warnings": r["warnings"],
-                    },
-                    "runtime_sec": 0.0,
-                }
-            f.write(json.dumps(rec) + "\n")
-
-        summary = {
-            "summary": True,
-            "adapter": adapter_name,
-            "prompt_version": PROMPT_VERSION,
-            "n_atoms": len(atoms),
-            "n_succeeded": n_ok,
-            "batch_id": batch_id,
-            "total_runtime_sec": total_runtime,
-            "total_input_tokens": total_in,
-            "total_output_tokens": total_out,
-            "total_cache_creation_tokens": total_cache_create,
-            "total_cache_read_tokens": total_cache_read,
-        }
-        f.write(json.dumps(summary) + "\n")
-
-    return summary
+                        "warnings": r["warnings"],
+                        **r["meta"],
+                    }
+                f.write(json.dumps(row) + "\n")
 
 
-def main():
-    p = argparse.ArgumentParser(description="Anthropic batch generation (50% off).")
-    p.add_argument("--dataset", default="data/atomized_v2.jsonl")
-    p.add_argument("--model", required=True)
-    p.add_argument("--output", required=True)
-    p.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
-    p.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE)
-    p.add_argument("--no-primer", action="store_true")
-    p.add_argument("--thinking-budget", type=int, default=None,
-                   help="Enable extended thinking with this token budget (e.g. 4000)")
-    p.add_argument("--max-atoms", type=int, default=None)
-    p.add_argument("--ids", nargs="+", default=None)
-    p.add_argument("--poll-interval", type=int, default=POLL_INTERVAL)
-    p.add_argument("--timeout", type=int, default=POLL_TIMEOUT)
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    p = argparse.ArgumentParser(
+        description="Submit/collect an Anthropic Message Batch for problem-centric generation."
+    )
+    p.add_argument("--model", required=True, help="Model to use for generation.")
+    p.add_argument("--output", required=True, help="Output generations JSONL path.")
+    p.add_argument(
+        "--ids", nargs="+", default=None, metavar="ID",
+        help="Restrict to specific problem IDs.",
+    )
+    p.add_argument(
+        "--language", default="webppl",
+        help="Language (default: webppl). Selects prompt primer and realization.",
+    )
+    p.add_argument(
+        "--n-samples", type=int, default=1,
+        help="Generations per problem (default: 1, i.e. one slot).",
+    )
+    p.add_argument(
+        "--no-poll", action="store_true",
+        help="Submit the batch and print batch_id without waiting for results.",
+    )
+    p.add_argument(
+        "--collect", default=None, metavar="BATCH_ID",
+        help="Resume: collect results for an already-completed batch_id.",
+    )
+    p.add_argument(
+        "--max-tokens", type=int, default=DEFAULT_MAX_TOKENS,
+        help=f"Max tokens per request (default {DEFAULT_MAX_TOKENS}).",
+    )
+    p.add_argument(
+        "--temperature", type=float, default=DEFAULT_TEMPERATURE,
+        help=f"Sampling temperature (default {DEFAULT_TEMPERATURE}).",
+    )
+    p.add_argument(
+        "--poll-interval", type=int, default=POLL_INTERVAL,
+        help=f"Poll interval in seconds (default {POLL_INTERVAL}).",
+    )
+    p.add_argument(
+        "--timeout", type=int, default=POLL_TIMEOUT,
+        help=f"Max wait time in seconds (default {POLL_TIMEOUT}).",
+    )
     args = p.parse_args()
 
-    # When thinking is enabled, bump max_tokens to leave room for both
-    # the thinking trace and the answer (default args.max_tokens is the
-    # answer budget; total = answer + thinking).
-    max_tokens = args.max_tokens
-    if args.thinking_budget is not None:
-        max_tokens = args.max_tokens + args.thinking_budget
+    # Lazy import to avoid circular dependency at module load time.
+    from eval.corpus import load_problems
 
-    summary = run_batch_generation(
-        dataset_path=Path(args.dataset),
-        output_path=Path(args.output),
+    id_set = set(args.ids) if args.ids else None
+    problems = load_problems(id_set)
+    if not problems:
+        print("No matching problems found.")
+        return
+
+    output_path = Path(args.output)
+    client = Anthropic()
+    n_solvers = args.n_samples
+
+    # --collect mode: fetch results for an existing batch
+    if args.collect:
+        batch_id = args.collect
+        print(f"[generate_batch] collecting results for batch {batch_id}...")
+        batch = client.messages.batches.retrieve(batch_id)
+        if batch.processing_status != "ended":
+            print(f"[generate_batch] batch not ended yet (status={batch.processing_status}), waiting...")
+            wait_for_batch(client, batch_id, poll_interval=args.poll_interval, timeout=args.timeout)
+        results = collect_results(client, batch_id)
+        _write_generation_rows(
+            problems, results, output_path,
+            model=args.model, language=args.language,
+            n_solvers=n_solvers, batch_id=batch_id,
+        )
+        print(f"[generate_batch] wrote {len(problems) * n_solvers} rows to {output_path}")
+        return
+
+    # Normal mode: build + submit
+    requests = build_requests(
+        problems,
+        language=args.language,
         model=args.model,
-        max_tokens=max_tokens,
+        n_solvers=n_solvers,
+        max_tokens=args.max_tokens,
         temperature=args.temperature,
-        with_primer=not args.no_primer,
-        thinking_budget=args.thinking_budget,
-        max_atoms=args.max_atoms,
-        ids=args.ids,
-        poll_interval=args.poll_interval,
-        timeout=args.timeout,
     )
+    print(f"[generate_batch] submitting {len(requests)} requests ({len(problems)} problems × {n_solvers} slots)...")
+    batch_id = submit_batch(client, requests)
+    print(f"[generate_batch] batch_id={batch_id}")
 
-    print()
-    print("=" * 60)
-    print("BATCH GENERATION DONE")
-    print("=" * 60)
-    print(f"  Adapter:       {summary['adapter']}")
-    print(f"  Atoms:         {summary['n_atoms']}")
-    print(f"  Succeeded:     {summary['n_succeeded']}")
-    print(f"  Batch id:      {summary['batch_id']}")
-    print(f"  Wall clock:      {summary['total_runtime_sec']:.1f}s")
-    print(f"  Input tokens:    {summary['total_input_tokens']:,}")
-    print(f"  Output tokens:   {summary['total_output_tokens']:,}")
-    print(f"  Cache writes:    {summary['total_cache_creation_tokens']:,}")
-    print(f"  Cache reads:     {summary['total_cache_read_tokens']:,}")
+    if args.no_poll:
+        print(f"[generate_batch] --no-poll: exiting. Resume with: --collect {batch_id}")
+        return
+
+    print(f"[generate_batch] polling every {args.poll_interval}s (timeout {args.timeout}s)...")
+    wait_for_batch(client, batch_id, poll_interval=args.poll_interval, timeout=args.timeout)
+
+    print("[generate_batch] streaming results...")
+    results = collect_results(client, batch_id)
+    _write_generation_rows(
+        problems, results, output_path,
+        model=args.model, language=args.language,
+        n_solvers=n_solvers, batch_id=batch_id,
+    )
+    print(f"[generate_batch] wrote {len(problems) * n_solvers} rows to {output_path}")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ import type { APIRoute } from 'astro';
 type Vote = 'up' | 'down' | 'neutral';
 
 interface FeedbackBody {
+  // D1 column name kept from the atom era; the value is a problem_id.
   atom_id: string;
   collection: string;
   dataset_version: string;
