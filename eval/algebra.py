@@ -528,6 +528,27 @@ def canonicalize(raw, spec: Spec):
             return _parse_legacy_repr(raw.get("repr", ""))
         if _is_dist_dict(raw):
             return _enum_from_dict(raw, spec.domain, spec.labels, spec.support)
+        if (isinstance(raw, dict)
+                and not _is_param_dict(raw)
+                and not _is_dist_dict(raw)
+                and _kind_tag(raw) is None):
+            # Mapping form: plain JSON object {label: probability}.
+            # This is the language-neutral "mapping" representation — natural in Python
+            # (Pyro) and constructible in any language. Keys are JSON-parsed back to
+            # labels; values must be numeric probabilities.
+            support_list = []
+            probs_list = []
+            for k, v in raw.items():
+                try:
+                    label = json.loads(k)
+                except (json.JSONDecodeError, ValueError):
+                    label = k
+                support_list.append(label)
+                probs_list.append(v)
+            return _enum_from_dict(
+                {"support": support_list, "probs": probs_list},
+                spec.domain, spec.labels, spec.support,
+            )
         if isinstance(raw, list):
             if not raw:
                 raise AlgebraError("empty sample cloud")

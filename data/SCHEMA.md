@@ -131,6 +131,9 @@ How an executed program happens to expose an answer:
 | enumerated | `{"kind": "dist_enum", "support": [...], "probs": [...]}` |
 | parametric | `{"kind": "dist_param", "family": "beta", "params": {"a": 2, "b": 5}}` |
 | sample cloud | list of draws (program-internal or harness reruns) |
+| mapping | plain JSON object `{label: probability}` (keys JSON-parsed back to labels; natural dict form in Python bindings) |
+
+Duplicate labels in the mapping form merge (their probabilities are summed) and the total mass normalizes to 1, identical to the enumerated form.
 
 Legacy wire forms (`__kind: distribution`, `__kind: distribution_continuous` with a
 `repr` string, `__kind: tensor`) are accepted by the canonicalizer until the serializers

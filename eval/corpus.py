@@ -10,7 +10,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from eval.executor import execute_webppl
+from eval.executor_pyro import execute_pyro
 from eval.io import load_jsonl
+
+# Language bindings: executor per realization language.
+EXECUTORS = {"webppl": execute_webppl, "pyro": execute_pyro}
+
+
+def executor_for(language: str):
+    try:
+        return EXECUTORS[language]
+    except KeyError:
+        raise ValueError(
+            f"no executor for language {language!r} (known: {sorted(EXECUTORS)})")
 
 # ---------------------------------------------------------------------------
 # Paths

@@ -38,7 +38,7 @@ from eval.algebra import (
     verdict,
 )
 from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
-from eval.corpus import load_corpus, load_problems
+from eval.corpus import executor_for, load_corpus, load_problems
 from eval.executor import execute_webppl
 from eval.generate_batch import (
     build_requests,
@@ -363,12 +363,13 @@ def cmd_solve(args) -> None:
 
     print(f"[solve] {len(problems)} problem(s) → {len(problems) * 2} requests")
 
-    requests = build_requests(problems, language="webppl", model=args.model)
+    requests = build_requests(problems, language=args.language, model=args.model)
 
     # Build manifest (always, whether dry-run or not)
     manifest = {
         "batch_id": None,
         "model": args.model,
+        "language": args.language,
         "temperature": _SOLVE_TEMPERATURE,
         "max_tokens": _SOLVE_MAX_TOKENS,
         "n_problems": len(problems),
@@ -436,6 +437,7 @@ def execute_candidate_answer(
     n_draws: int = DEFAULT_N_MC,
     timeout: int = DEFAULT_TIMEOUT,
     workers: int = DEFAULT_MC_WORKERS,
+    executor=execute_webppl,
 ) -> object:
     """Execute candidate code and return a canonical answer.
 
@@ -447,6 +449,7 @@ def execute_candidate_answer(
         base_seed=base_seed, n_draws=n_draws,
         k_exact=1, k_draws=1,
         timeout=timeout, workers=workers,
+        executor=executor,
     )
     return answers[0]
 
@@ -464,6 +467,7 @@ def _judge_problem_b(
     timeout: int = DEFAULT_TIMEOUT,
     workers: int = DEFAULT_MC_WORKERS,
     stamp: dict | None = None,
+    executor=execute_webppl,
 ) -> dict:
     """Judge one problem: collect GTs, execute solvers, classify.
 
@@ -514,6 +518,7 @@ def _judge_problem_b(
             k_draws=k_draws,
             timeout=timeout,
             workers=workers,
+            executor=executor,
         )
         gt_floor = noise_floor(gts, spec)
     except (RuntimeError, AlgebraError) as exc:
@@ -546,6 +551,7 @@ def _judge_problem_b(
                 n_draws=n_draws,
                 timeout=timeout,
                 workers=workers,
+                executor=executor,
             )
         except (RuntimeError, AlgebraError) as exc:
             solver_exec_errors[i] = str(exc)
@@ -679,14 +685,17 @@ def cmd_judge(args) -> None:
                 solver_errors_by_pid[pid][slot] = "; ".join(errs) if errs else "batch error"
 
     # Load problems and realizations for GT re-computation
+    language = manifest.get("language", "webppl")
+    executor = executor_for(language)
     id_set = set(solver_codes_by_pid.keys()) if solver_codes_by_pid else None
     problems = load_problems(id_set)
-    _, realizations_list = load_corpus(id_set)
+    _, realizations_list = load_corpus(id_set, language=language)
     real_by_id = {r["problem_id"]: r for r in realizations_list if "code" in r}
 
     # Build protocol stamp from manifest metadata
     stamp = {
         "gate_model": manifest.get("model"),
+        "language": language,
         "timeout": args.timeout,
         "n_solvers": 2,
     }
@@ -708,6 +717,7 @@ def cmd_judge(args) -> None:
             timeout=args.timeout,
             workers=per_problem_workers,
             stamp=stamp,
+            executor=executor,
         )
 
     reports = _map_problems(
@@ -775,6 +785,135 @@ def _print_solver_summary(reports: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cross-language consistency check
+# ---------------------------------------------------------------------------
+
+_CROSSCHECK_REPORT = Path("data/problems/_gate_crosscheck_report.jsonl")
+
+
+def crosscheck_problem(
+    problem: dict,
+    target_real: dict,
+    reference_real: dict,
+    *,
+    target_executor,
+    reference_executor,
+    base_seed: int = DEFAULT_SEED,
+    n_draws: int = DEFAULT_N_MC,
+    k_exact: int = _DEFAULT_K_EXACT,
+    k_draws: int = _DEFAULT_K_DRAWS,
+    timeout: int = DEFAULT_TIMEOUT,
+    workers: int = DEFAULT_MC_WORKERS,
+) -> dict:
+    """Judge the reference-language GT against k target-language GT runs.
+
+    The target's own multi-seed noise floor sets the tolerance, so a sampled
+    target realization (e.g. Pyro importance sampling) is comparable against
+    an exact reference (e.g. WebPPL enumeration). Statuses mirror judge():
+    pass / fail / ill_posed (target floor exceeds caps) / error.
+    """
+    pid = problem["problem_id"]
+    t0 = time.time()
+    try:
+        spec = parse_spec(problem["answer_spec"])
+    except (AlgebraError, KeyError, TypeError) as exc:
+        return {"problem_id": pid, "status": "error", "error": f"bad spec: {exc}"}
+
+    try:
+        target_gts, _ = collect_gt_answers(
+            target_real["code"], spec,
+            base_seed=base_seed, n_draws=n_draws,
+            k_exact=k_exact, k_draws=k_draws,
+            timeout=timeout, workers=workers, executor=target_executor,
+        )
+    except (RuntimeError, AlgebraError) as exc:
+        return {"problem_id": pid, "status": "error",
+                "error": f"target GT failed: {exc}",
+                "runtime_sec": round(time.time() - t0, 3)}
+
+    try:
+        ref_canon = execute_candidate_answer(
+            reference_real["code"], spec,
+            base_seed=base_seed, n_draws=n_draws,
+            timeout=timeout, workers=workers, executor=reference_executor,
+        )
+    except (RuntimeError, AlgebraError) as exc:
+        return {"problem_id": pid, "status": "error",
+                "error": f"reference GT failed: {exc}",
+                "runtime_sec": round(time.time() - t0, 3)}
+
+    try:
+        v = verdict(ref_canon, target_gts, spec)
+    except AlgebraError as exc:
+        return {"problem_id": pid, "status": "error",
+                "error": f"verdict failed: {exc}",
+                "runtime_sec": round(time.time() - t0, 3)}
+
+    from eval.algebra import status_of
+    return {
+        "problem_id": pid,
+        "status": status_of(v),
+        "distance": round(v["distance"], 6),
+        "tol": v["tol"],
+        "target_floor": round(v["floor"], 6),
+        "metric": v["metric"],
+        "runtime_sec": round(time.time() - t0, 3),
+    }
+
+
+def cmd_crosscheck(args) -> None:
+    """Cross-language gate: target-language realizations vs reference GT."""
+    target_executor = executor_for(args.language)
+    reference_executor = executor_for(args.reference)
+
+    id_set = set(args.ids) if args.ids else None
+    problems, target_reals = load_corpus(id_set, language=args.language)
+    _, ref_list = load_corpus(
+        {p["problem_id"] for p in problems}, language=args.reference)
+    ref_by_id = {r["problem_id"]: r for r in ref_list}
+
+    pairs = [(p, tr) for p, tr in zip(problems, target_reals)
+             if p["problem_id"] in ref_by_id]
+    if not pairs:
+        print("No problems with realizations in both languages.")
+        return
+
+    print(f"[crosscheck] {len(pairs)} problem(s): "
+          f"{args.language} (target) vs {args.reference} (reference)")
+    parallel = min(4, max(1, len(pairs)))
+    per_problem_workers = max(1, args.workers // parallel)
+
+    def _check_one(pair: tuple) -> dict:
+        prob, target_real = pair
+        row = crosscheck_problem(
+            prob, target_real, ref_by_id[prob["problem_id"]],
+            target_executor=target_executor,
+            reference_executor=reference_executor,
+            base_seed=args.seed, n_draws=args.n_draws,
+            k_exact=args.k_exact, k_draws=args.k_draws,
+            timeout=args.timeout, workers=per_problem_workers,
+        )
+        return {**row, "language": args.language, "reference": args.reference}
+
+    def _line(r: dict) -> str:
+        d = f"d={r['distance']} tol={round(r['tol'], 6)}" if "distance" in r else \
+            f"ERR: {r.get('error', '')[:70]}"
+        return f"{r['problem_id']} ... {r['status']} {d}"
+
+    reports = _map_problems(pairs, _check_one, parallel=parallel, line=_line)
+
+    report_path = Path(args.report) if args.report else _CROSSCHECK_REPORT
+    total = _merge_report(report_path, reports)
+    print(f"\n[crosscheck] report written to {report_path} "
+          f"({len(reports)} checked, {total} total rows)")
+    counts: dict[str, int] = {}
+    for r in reports:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    for s, n in sorted(counts.items()):
+        print(f"  {s:<12s} {n:>4d} / {len(reports)}")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -791,6 +930,10 @@ def main() -> None:
         p.add_argument(
             "--ids", nargs="+", default=None, metavar="ID",
             help="Restrict to specific problem IDs.",
+        )
+        p.add_argument(
+            "--language", default="webppl",
+            help="Realization language (selects realization file + executor).",
         )
         p.add_argument(
             "--workers", type=int, default=DEFAULT_MC_WORKERS,
@@ -828,6 +971,21 @@ def main() -> None:
     _add_phase_a_args(phase_a)
 
     # ------------------------------------------------------------------
+    # Cross-language check
+    # ------------------------------------------------------------------
+    cross_p = subs.add_parser(
+        "crosscheck",
+        help="Judge a reference language's GT against the target language's "
+             "multi-seed GT runs (target floor sets tolerance).",
+    )
+    _add_phase_a_args(cross_p)
+    cross_p.add_argument(
+        "--reference", default="webppl",
+        help="Reference language whose GT is judged (default webppl).",
+    )
+    cross_p.set_defaults(report=str(_CROSSCHECK_REPORT))
+
+    # ------------------------------------------------------------------
     # Phase-B: solve
     # ------------------------------------------------------------------
     solve_p = subs.add_parser(
@@ -845,6 +1003,10 @@ def main() -> None:
     solve_p.add_argument(
         "--model", default=_SOLVE_MODEL,
         help=f"Solver model (default {_SOLVE_MODEL}).",
+    )
+    solve_p.add_argument(
+        "--language", default="webppl",
+        help="Target language for prompts + judging (recorded in the manifest).",
     )
     solve_p.add_argument(
         "--manifest", default=None, metavar="PATH",
@@ -894,6 +1056,10 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Dispatch
     # ------------------------------------------------------------------
+    if args.subcommand == "crosscheck":
+        cmd_crosscheck(args)
+        return
+
     if args.subcommand == "solve":
         cmd_solve(args)
         return
@@ -915,7 +1081,8 @@ def main() -> None:
         args = pa.parse_args()
 
     id_set = set(args.ids) if args.ids else None
-    problems, realizations = load_corpus(id_set)
+    problems, realizations = load_corpus(id_set, language=args.language)
+    executor = executor_for(args.language)
 
     if not problems:
         print("No matching problems found.")
@@ -940,6 +1107,7 @@ def main() -> None:
             k_draws=args.k_draws,
             timeout=args.timeout,
             workers=per_problem_workers,
+            executor=executor,
         )
 
     def _pa_line(r: dict) -> str:

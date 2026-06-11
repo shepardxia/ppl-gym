@@ -1,23 +1,28 @@
-"""Pyro executor.
+"""Pyro executor for ppl-gym.
 
-Contract: the user program ends by assigning to top-level `ANSWER`. The
-caller wraps the program with a serializer that JSON-stringifies the
-binding using the same cross-PPL schema as `executor.py` (WebPPL), so
-metrics/web app code is unchanged.
+Binding contract: the user program must assign a top-level ``ANSWER`` variable.
+The injected serializer JSON-stringifies that binding using the native wire forms
+defined in data/SCHEMA.md §Representations.
 
-Output schema (must match `executor.py`):
-  - discrete distribution → {"__kind": "distribution", "probs": [...], "support": [...]}
-  - continuous distribution → {"__kind": "distribution_continuous", "repr": "..."}
-  - tensor → {"__kind": "tensor", "dims": [...], "data": [...]}
-  - function → {"__kind": "function"}
-  - everything else → JSON-native (numbers, strings, bools, lists, dicts)
+Seeding: ``execute_pyro`` sets the environment variable ``PPL_GYM_PYRO_SEED``
+before spawning the subprocess. The injected header reads it and calls
+``pyro.set_rng_seed(seed)`` (which seeds torch, Python random, and numpy
+together), so the same stochastic program returns identical output for the same
+seed and different output for different seeds.
 
-`ANSWER` may be:
-  - a `pyro.distributions.Distribution` (use `enumerate_support` for discrete)
-  - a `torch.distributions.Distribution` (same)
-  - a Python primitive / list / dict / tuple
-  - a `torch.Tensor` (scalar or vector)
-  - a list of samples (returned as-is; the caller re-aggregates — see eval/gate.collect_gt_answers)
+Native output forms (no legacy __kind wrappers):
+  - None / bool / int / float / str -> JSON scalar as-is.
+  - torch.Tensor: 0-D -> scalar; 1-D -> list; >=2-D -> {"kind":"tensor","dims":[...],"data":flat list}.
+  - dict -> plain JSON object (values recursive; non-str keys JSON-stringified
+    after converting tuples to lists, so bool keys become "true"/"false").
+  - list / tuple -> JSON array, recursive.
+  - pyro.distributions.Empirical (and EmpiricalMarginal) -> aggregate by distinct
+    sample values with normalized weights -> {"kind":"dist_enum","support":[...],"probs":[...]}.
+  - Distribution with enumerate_support() -> {"kind":"dist_enum","support":[...],"probs":[...]}.
+  - other Distribution (continuous/parametric) -> {"kind":"dist_param","family":...,"params":{...}}.
+    Parameter names are NOT remapped here; eval/algebra.py owns the alias table.
+  - callable -> error to stderr + exit 2.
+  - anything else -> error to stderr + exit 2 (no silent repr fallback).
 """
 
 from __future__ import annotations
@@ -37,130 +42,176 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _VENV_PY = _PROJECT_ROOT / ".venv" / "bin" / "python"
 
 
-SERIALIZER_HEADER = r"""
+# Use ''' delimiter so """ inside user-facing docstrings don't close this string.
+SERIALIZER_HEADER = r'''
 import json
 import math
+import os
 import sys
 import pyro
 import pyro.distributions as dist
 import torch
+from collections import defaultdict
 
-def __serialize(x):
-    # Order matters: check torch.Tensor before iterable/dict.
+# ── Seeding ──────────────────────────────────────────────────────────────────
+# pyro.set_rng_seed seeds torch, Python random, and numpy in one call.
+pyro.set_rng_seed(int(os.environ.get("PPL_GYM_PYRO_SEED", "42")))
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _is_distribution(x):
+    return isinstance(x, (pyro.distributions.Distribution,
+                           torch.distributions.Distribution))
+
+
+def _is_empirical(x):
+    # True for Empirical and its subclass EmpiricalMarginal.
+    return isinstance(x, pyro.distributions.Empirical)
+
+
+def _tensor_to_py(t):
+    # Coerce a 0-D or 1-D tensor to a Python scalar or list.
+    if not isinstance(t, torch.Tensor):
+        return t
+    if t.dim() == 0:
+        return t.item()
+    return t.tolist()
+
+
+def _serialize_key(k):
+    # Serialize a dict key to a JSON string.
+    # str  -> pass through.
+    # bool -> json.dumps so True->"true", False->"false".
+    # int/float -> json.dumps.
+    # tuple -> serialize elements then json.dumps of the resulting list.
+    # anything else -> json.dumps(_serialize(k)).
+    if isinstance(k, str):
+        return k
+    if isinstance(k, bool):
+        return json.dumps(k)
+    if isinstance(k, (int, float)):
+        return json.dumps(k)
+    if isinstance(k, tuple):
+        return json.dumps([_serialize(x) for x in k])
+    return json.dumps(_serialize(k))
+
+
+def _serialize_empirical(x):
+    # Aggregate Empirical / EmpiricalMarginal -> dist_enum.
+    # Weights are obtained via softmax over log_weights (handles both
+    # uniform log_weights from unweighted samplers and IS log_weights).
+    weights = torch.softmax(x._log_weights, dim=0)
+    agg = defaultdict(float)
+    raw_vals = {}
+    for sample, w in zip(x._samples, weights):
+        if sample.dim() == 0:
+            key = sample.item()
+        else:
+            key = tuple(sample.tolist())
+        str_key = json.dumps(key)
+        agg[str_key] += w.item()
+        if str_key not in raw_vals:
+            raw_vals[str_key] = _tensor_to_py(sample)
+    total = sum(agg.values())
+    # Sort by JSON string key for canonical ordering.
+    pairs = sorted(agg.items(), key=lambda kv: kv[0])
+    support = [raw_vals[k] for k, _ in pairs]
+    probs = [v / total for _, v in pairs]
+    return {"kind": "dist_enum", "support": support, "probs": probs}
+
+
+def _serialize_enum_dist(x):
+    # Distribution with finite enumerate_support -> dist_enum.
+    sup = x.enumerate_support()
+    log_p = x.log_prob(sup)
+    probs_t = log_p.exp().detach()
+    # Flatten any batch dims by averaging.
+    if probs_t.dim() > 1:
+        probs_t = probs_t.view(probs_t.shape[0], -1).mean(dim=1)
+    total = probs_t.sum().item()
+    if total <= 0:
+        sys.stderr.write("ERROR: distribution has zero total probability\n")
+        sys.exit(2)
+    sup_py = [_tensor_to_py(s) for s in sup]
+    probs_py = [p / total for p in probs_t.tolist()]
+    # Canonical sort: numeric values first (by value), strings second.
+    pairs = list(zip(sup_py, probs_py))
+    try:
+        pairs.sort(key=lambda kv: (0, kv[0]) if isinstance(kv[0], (int, float))
+                                  else (1, str(kv[0])))
+    except TypeError:
+        pass
+    sup_sorted, probs_sorted = zip(*pairs) if pairs else ([], [])
+    return {"kind": "dist_enum", "support": list(sup_sorted), "probs": list(probs_sorted)}
+
+
+def _serialize_param_dist(x):
+    # Continuous/parametric distribution -> dist_param.
+    # Parameter names are NOT remapped here; eval/algebra.py owns the alias
+    # table (e.g. concentration1/0 -> a/b, loc/scale -> mu/sigma).
+    family = type(x).__name__.lower()
+    params = {}
+    if hasattr(x, "arg_constraints"):
+        for k in x.arg_constraints:
+            try:
+                v = getattr(x, k, None)
+            except Exception:
+                continue
+            if v is None:
+                continue
+            if isinstance(v, torch.Tensor):
+                v = v.item() if v.numel() == 1 else v.tolist()
+            params[k] = v
+    return {"kind": "dist_param", "family": family, "params": params}
+
+
+def _serialize(x):
+    # Recursively serialize x to a JSON-native value.
     if x is None:
         return None
-    if isinstance(x, bool):  # bool is subclass of int — handle first
+    # bool must come before int (bool is a subclass of int).
+    if isinstance(x, bool):
         return x
     if isinstance(x, (int, float, str)):
         return x
     if isinstance(x, torch.Tensor):
-        if x.numel() == 1 and x.dim() == 0:
+        if x.dim() == 0:
             return x.item()
-        return {"__kind": "tensor", "dims": list(x.shape), "data": x.flatten().tolist()}
-    if callable(x) and not isinstance(x, type) and not _is_distribution(x):
-        return {"__kind": "function"}
+        if x.dim() == 1:
+            return x.tolist()
+        # >=2-D tensor
+        return {"kind": "tensor", "dims": list(x.shape),
+                "data": x.flatten().tolist()}
+    if _is_empirical(x):
+        return _serialize_empirical(x)
     if _is_distribution(x):
-        # Discrete with finite support → emit {probs, support}.
-        try:
-            sup = x.enumerate_support()
-        except (NotImplementedError, AttributeError):
-            return {"__kind": "distribution_continuous", "repr": _continuous_repr(x)}
-        # log_prob can return a tensor of shape [support_size] or [support_size, ...] (batched).
-        log_p = x.log_prob(sup)
-        # Reduce any batch dims by summing (no batch dim expected in our usage).
-        probs = log_p.exp().detach()
-        if probs.dim() > 1:
-            probs = probs.view(probs.shape[0], -1).mean(dim=1)
-        # Coerce support to plain Python lists / scalars.
-        sup_py = [__tensor_to_py(s) for s in sup]
-        # Reorder so support is canonical (numeric/string asc).
-        pairs = list(zip(sup_py, probs.tolist()))
-        try:
-            pairs.sort(key=lambda kv: (0, kv[0]) if isinstance(kv[0], (int, float)) else (1, str(kv[0])))
-        except TypeError:
-            pass
-        sup_sorted, probs_sorted = zip(*pairs) if pairs else ([], [])
-        return {"__kind": "distribution", "probs": list(probs_sorted), "support": list(sup_sorted)}
-    if isinstance(x, dict):
-        return {str(k): __serialize(v) for k, v in x.items()}
-    if isinstance(x, (list, tuple)):
-        return [__serialize(v) for v in x]
-    return repr(x)
-
-
-_PYRO_TO_WEBPPL_PARAM = {
-    # Beta: Pyro uses concentration1/concentration0; WebPPL uses a/b
-    ("Beta", "concentration1"): "a",
-    ("Beta", "concentration0"): "b",
-    # Normal: Pyro loc/scale; WebPPL mu/sigma (called Gaussian there)
-    ("Normal", "loc"): "mu",
-    ("Normal", "scale"): "sigma",
-    ("Gaussian", "loc"): "mu",
-    ("Gaussian", "scale"): "sigma",
-    # Gamma: Pyro concentration/rate; WebPPL shape/scale (note webppl uses inverse 1/rate)
-    ("Gamma", "concentration"): "shape",
-    ("Gamma", "rate"): "rate",
-}
-# Distributions whose Pyro class name should be remapped to webppl convention.
-_DIST_NAME_REMAP = {"Normal": "Gaussian"}
-
-
-def _continuous_repr(d):
-    # Match WebPPL's `Name({k: v, k: v})` repr so cross-PPL comparison
-    # on a continuous distribution's params succeeds.
-    name = type(d).__name__
-    name = _DIST_NAME_REMAP.get(name, name)
-    params = {}
-    if hasattr(d, "arg_constraints"):
-        for k in d.arg_constraints:
+        if x.has_enumerate_support:
             try:
-                v = getattr(d, k, None)
-            except Exception:
-                continue
-            if v is None: continue
-            if isinstance(v, torch.Tensor):
-                if v.numel() == 1:
-                    v = v.item()
-                else:
-                    v = v.tolist()
-            params[_PYRO_TO_WEBPPL_PARAM.get((name, k), k)] = v
-    if not params:
-        return name + "()"
-    def _fmt(v):
-        # WebPPL's repr writes integer-valued floats without the decimal
-        # (`10` not `10.0`). Mirror that so cross-PPL string comparison
-        # succeeds.
-        if isinstance(v, float) and v.is_integer():
-            return str(int(v))
-        return str(v)
-    inner = ", ".join(f"{k}: {_fmt(v)}" for k, v in params.items())
-    return f"{name}({{ {inner} }})"
-
-
-def __tensor_to_py(t):
-    if isinstance(t, torch.Tensor):
-        if t.numel() == 1:
-            v = t.item()
-            # Boolean-flavored scalar tensors come from Bernoulli; preserve int/bool.
-            if t.dtype == torch.bool:
-                return bool(v)
-            return v
-        return t.tolist()
-    return t
-
-
-def _is_distribution(x):
-    return isinstance(x, (pyro.distributions.Distribution, torch.distributions.Distribution))
+                return _serialize_enum_dist(x)
+            except (NotImplementedError, AttributeError):
+                pass
+        return _serialize_param_dist(x)
+    if callable(x) and not isinstance(x, type):
+        sys.stderr.write("ERROR: ANSWER is a function\n")
+        sys.exit(2)
+    if isinstance(x, dict):
+        return {_serialize_key(k): _serialize(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_serialize(v) for v in x]
+    # No silent repr fallback.
+    sys.stderr.write(f"ERROR: cannot serialize ANSWER of type {type(x).__name__}\n")
+    sys.exit(2)
 
 
 def __emit_answer():
     try:
-        ans = ANSWER  # noqa: F821 - bound by the user program
+        ans = ANSWER  # noqa: F821 -- bound by the user program
     except NameError:
         sys.stderr.write("ERROR: program did not define top-level ANSWER\n")
         sys.exit(2)
-    sys.stdout.write(json.dumps(__serialize(ans)))
-"""
+    sys.stdout.write(json.dumps(_serialize(ans)))
+'''
 
 SERIALIZER_FOOTER = "__emit_answer()\n"
 
@@ -181,6 +232,12 @@ def _wrap_program(code: str) -> str:
 
 
 def execute_pyro(code: str, timeout: int = 30, random_seed: int | None = None) -> ExecutionResult:
+    """Execute ``code`` as a Pyro program in a subprocess and return the result.
+
+    ``random_seed`` is passed to the subprocess via ``PPL_GYM_PYRO_SEED``; the
+    injected header calls ``pyro.set_rng_seed`` so the same seed gives identical
+    output across calls.  Defaults to 42 when *None*.
+    """
     full_code = _wrap_program(code)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
@@ -188,15 +245,9 @@ def execute_pyro(code: str, timeout: int = 30, random_seed: int | None = None) -
         tmp_path = f.name
 
     try:
-        # Seed Pyro/torch deterministically via env so the user code doesn't
-        # have to remember to do it.
         env = {**os.environ}
         seed = random_seed if random_seed is not None else 42
         env["PPL_GYM_PYRO_SEED"] = str(seed)
-        # Prepend a tiny seeder before the user code (via a wrapper file
-        # would lose line numbers in errors; cleaner: inject into the header).
-        # The seeder is part of SERIALIZER_HEADER instead. Add it now.
-        # (Edit: already part of header in spirit; here we just set the env.)
 
         cmd = [str(_VENV_PY), tmp_path]
         try:
@@ -272,12 +323,10 @@ def _extract_error(text: str) -> str:
 
 
 if __name__ == "__main__":
-    # Smoke test: discrete distribution → {probs, support}.
-    r = execute_pyro(
-        "ANSWER = dist.Bernoulli(0.7)",
-        random_seed=42,
-    )
+    import json as _json
+    # Smoke test: discrete distribution -> dist_enum.
+    r = execute_pyro("ANSWER = dist.Bernoulli(0.7)", random_seed=42)
     print(f"success={r.success}")
-    print(f"answer={json.dumps(r.answer, indent=2)}")
+    print(f"answer={_json.dumps(r.answer, indent=2)}")
     if not r.success:
         print(f"stderr={r.stderr}")

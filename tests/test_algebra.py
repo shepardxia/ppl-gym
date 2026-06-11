@@ -906,3 +906,103 @@ def test_agreement_returns_metric():
     e = EnumDist(("H",), (1.0,))
     result = agreement(e, e, DIST_FIN)
     assert result["metric"] == "tv"
+
+
+# ---------------------------------------------------------------------------
+# Mapping form: plain JSON object {label: probability}
+# ---------------------------------------------------------------------------
+
+def test_mapping_finite_string_keys():
+    """Plain dict with string keys is accepted as a mapping (label→prob)."""
+    raw = {"chases": 0.7, "barks": 0.3}
+    c = canonicalize(raw, DIST_FIN)
+    assert isinstance(c, EnumDist)
+    histo = dict(zip(c.support, c.probs))
+    assert histo["chases"] == pytest.approx(0.7)
+    assert histo["barks"] == pytest.approx(0.3)
+
+
+def test_mapping_key_true_parses_to_bool():
+    """Key "true" JSON-parses to Python bool True."""
+    raw = {"true": 0.6, "false": 0.4}
+    c = canonicalize(raw, DIST_BOOL)
+    assert isinstance(c, EnumDist)
+    histo = dict(zip(c.support, c.probs))
+    assert True in histo
+    assert False in histo
+    assert histo[True] == pytest.approx(0.6)
+
+
+def test_mapping_key_int_parses():
+    """Key "3" JSON-parses to int 3."""
+    raw = {"1": 0.5, "3": 0.5}
+    c = canonicalize(raw, DIST_FIN)
+    assert isinstance(c, EnumDist)
+    histo = dict(zip(c.support, c.probs))
+    assert 1 in histo
+    assert 3 in histo
+
+
+def test_mapping_key_list_parses():
+    """Key "[1, 2]" JSON-parses to list [1, 2]."""
+    raw = {"[1, 2]": 0.5, "[3, 4]": 0.5}
+    c = canonicalize(raw, DIST_FIN)
+    assert isinstance(c, EnumDist)
+    histo = {str(v): p for v, p in zip(c.support, c.probs)}
+    # The labels should be lists; check via _label_key
+    from eval.algebra import _label_key
+    keys = {_label_key(v) for v in c.support}
+    assert "[1, 2]" in keys or "\"[1, 2]\"" in keys  # json.dumps of list
+    # More reliable: check both parsed labels are lists
+    assert all(isinstance(v, list) for v in c.support)
+
+
+def test_mapping_unparseable_key_falls_back_to_string():
+    """Key that fails json.loads stays as a raw string."""
+    raw = {"chases": 0.8, "hides": 0.2}
+    c = canonicalize(raw, DIST_FIN)
+    assert isinstance(c, EnumDist)
+    assert "chases" in c.support
+    assert "hides" in c.support
+
+
+def test_mapping_mass_normalizes():
+    """Probabilities in the mapping form are normalized."""
+    raw = {"a": 2.0, "b": 6.0}
+    c = canonicalize(raw, DIST_FIN)
+    assert sum(c.probs) == pytest.approx(1.0)
+    histo = dict(zip(c.support, c.probs))
+    assert histo["a"] == pytest.approx(0.25)
+    assert histo["b"] == pytest.approx(0.75)
+
+
+def test_mapping_duplicate_after_parse_keys_merge():
+    """Keys "1" and "1.0" both parse to int 1, so they merge."""
+    raw = {"1": 0.3, "1.0": 0.2, "2": 0.5}
+    c = canonicalize(raw, DIST_FIN)
+    assert isinstance(c, EnumDist)
+    histo = dict(zip(c.support, c.probs))
+    # "1" and "1.0" both normalize to label 1; combined prob = 0.5/1.0 = 0.5
+    assert 1 in histo
+    assert histo[1] == pytest.approx(0.5)
+    assert 2 in histo
+    assert histo[2] == pytest.approx(0.5)
+
+
+def test_mapping_declared_support_violation_raises():
+    """Mapping label not in declared support raises AlgebraError."""
+    s = parse_spec({"kind": "dist", "domain": "finite", "support": ["H", "T"]})
+    raw = {"H": 0.6, "X": 0.4}  # "X" is not in declared support
+    with pytest.raises(AlgebraError, match="not in declared support"):
+        canonicalize(raw, s)
+
+
+def test_mapping_dist_real_w1_comparable():
+    """Mapping form for dist/real produces EnumDist comparable via W1."""
+    raw = {"0": 0.5, "1": 0.5}
+    c = canonicalize(raw, DIST_INT)
+    assert isinstance(c, EnumDist)
+    # Should be comparable to an equivalent EnumDist
+    ref = canonicalize({"kind": "dist_enum", "support": [0, 1], "probs": [0.5, 0.5]}, DIST_INT)
+    d = distance(c, ref, DIST_INT)
+    assert d.value == pytest.approx(0.0)

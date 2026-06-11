@@ -349,3 +349,132 @@ class TestSupportContract:
         assert "distribution's support elements are exactly" not in text
         assert "Each draw must be exactly one of" not in text
         assert "The answer is exactly one of" not in text
+
+
+# ---------------------------------------------------------------------------
+# Language-aware contract: Pyro
+# ---------------------------------------------------------------------------
+
+class TestPyroContract:
+    """Pyro-specific contract wording for every spec kind."""
+
+    def test_pyro_value_binding(self):
+        """Pyro value spec: ANSWER = <expression>, no 'var' prefix."""
+        p = _make_problem({"kind": "value", "domain": "real"})
+        text = render_problem(p, language="pyro")
+        assert "ANSWER = <expression>" in text
+        assert "var ANSWER" not in text
+
+    def test_pyro_value_realvec_mentions_tensor(self):
+        """Pyro realvec value mentions 1-D tensor as an accepted form."""
+        p = _make_problem({"kind": "value", "domain": "realvec"})
+        text = render_problem(p, language="pyro")
+        assert "ANSWER" in text
+        assert "list" in text.lower() or "tensor" in text.lower()
+
+    def test_pyro_dist_object_mentions_dict_or_distribution(self):
+        """Pyro dist/object contract describes dict/distribution/samples — not Infer."""
+        p = _make_problem({"kind": "dist", "domain": "bool"})
+        text = render_problem(p, language="pyro")
+        assert "ANSWER" in text
+        # The pyro description mentions dict or distribution
+        assert "dict" in text.lower() or "distribution" in text.lower()
+
+    def test_pyro_dist_object_no_infer(self):
+        """Pyro contract must not mention WebPPL's Infer."""
+        p = _make_problem({"kind": "dist", "domain": "bool"})
+        text = render_problem(p, language="pyro")
+        assert "Infer" not in text
+
+    def test_pyro_dist_draws_single_draw(self):
+        """Pyro draws contract mentions one draw and many-runs semantics."""
+        p = _make_problem({"kind": "dist", "domain": "finite", "protocol": "draws"})
+        text = render_problem(p, language="pyro")
+        assert "ANSWER" in text
+        assert "one" in text.lower() or "single" in text.lower()
+        assert "many times" in text.lower() or "runs" in text.lower()
+
+    def test_pyro_dist_draws_no_infer(self):
+        """Pyro draws contract must not mention Infer."""
+        p = _make_problem({"kind": "dist", "domain": "finite", "protocol": "draws"})
+        text = render_problem(p, language="pyro")
+        assert "Infer" not in text
+
+    def test_pyro_record_uses_dict_language(self):
+        """Pyro record contract says 'dict' not 'object'."""
+        p = _make_problem({
+            "kind": "record",
+            "fields": {
+                "rain": {"kind": "dist", "domain": "bool"},
+                "n": {"kind": "value", "domain": "int"},
+            }
+        })
+        text = render_problem(p, language="pyro")
+        assert "ANSWER" in text
+        assert "dict" in text.lower()
+        assert "rain" in text
+        assert "n" in text
+
+    def test_pyro_no_var_in_record(self):
+        """Pyro record contract must not use 'var ANSWER'."""
+        p = _make_problem({
+            "kind": "record",
+            "fields": {"x": {"kind": "value", "domain": "real"}},
+        })
+        text = render_problem(p, language="pyro")
+        assert "var ANSWER" not in text
+
+
+# ---------------------------------------------------------------------------
+# Golden assertion: webppl output is byte-identical across language= calls
+# ---------------------------------------------------------------------------
+
+class TestWebpplGolden:
+    """render_problem(p) and render_problem(p, language='webppl') must be identical."""
+
+    def test_default_equals_explicit_webppl(self):
+        p = _make_problem({"kind": "dist", "domain": "bool"})
+        assert render_problem(p) == render_problem(p, language="webppl")
+
+    def test_value_default_equals_explicit_webppl(self):
+        p = _make_problem({"kind": "value", "domain": "real"})
+        assert render_problem(p) == render_problem(p, language="webppl")
+
+    def test_record_default_equals_explicit_webppl(self):
+        p = _make_problem({
+            "kind": "record",
+            "fields": {
+                "rain": {"kind": "dist", "domain": "bool"},
+                "n": {"kind": "value", "domain": "int"},
+            }
+        })
+        assert render_problem(p) == render_problem(p, language="webppl")
+
+    def test_webppl_dist_object_contains_infer(self):
+        """Golden: webppl dist/object contract explicitly names Infer."""
+        p = _make_problem({"kind": "dist", "domain": "bool"})
+        text = render_problem(p, language="webppl")
+        assert "var ANSWER = <expression>;" in text
+        assert "Infer" in text
+
+    def test_webppl_value_contains_var(self):
+        """Golden: webppl value contract uses 'var ANSWER'."""
+        p = _make_problem({"kind": "value", "domain": "real"})
+        text = render_problem(p, language="webppl")
+        assert "var ANSWER" in text
+
+
+# ---------------------------------------------------------------------------
+# Unknown language raises
+# ---------------------------------------------------------------------------
+
+class TestUnknownLanguage:
+    def test_unknown_language_raises_value_error(self):
+        p = _make_problem({"kind": "value", "domain": "real"})
+        with pytest.raises(ValueError, match="unknown language"):
+            render_problem(p, language="stan")
+
+    def test_unknown_language_raises_for_dist(self):
+        p = _make_problem({"kind": "dist", "domain": "bool"})
+        with pytest.raises(ValueError, match="unknown language"):
+            render_problem(p, language="church")

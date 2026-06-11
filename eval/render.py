@@ -26,6 +26,89 @@ from eval.algebra import Spec, _has_draws_field, parse_spec
 
 
 # ---------------------------------------------------------------------------
+# Language-specific wording table
+# ---------------------------------------------------------------------------
+
+# All contract text lives here. Keys are language identifiers; each sub-dict
+# provides the fragments consumed by _contract_for/_field_contract below.
+_LANG: dict[str, dict[str, str]] = {
+    "webppl": {
+        # prefix for `var ANSWER = <expression>;`
+        "binding_prefix": "End your program with `var ANSWER = <expression>;`",
+        # realvec variant suffix
+        "realvec_suffix": "For a real-valued vector, ANSWER should be a list of numbers.",
+        # dist object description (used after "where `<expression>` is ")
+        "dist_object": "the distribution object returned by `Infer`",
+        # full dist-object sentence (used when generating the standalone sentence)
+        "dist_object_sentence": (
+            "End your program with `var ANSWER = <expression>;` where "
+            "`<expression>` is the distribution object returned by `Infer`."
+        ),
+        # dist-draws full sentence
+        "dist_draws_sentence": (
+            "End your program with `var ANSWER = <expression>;` where "
+            "`<expression>` evaluates to **one** sampled draw from the process. "
+            "Your program will be run many times with different random seeds; "
+            "each run contributes one draw to the collected distribution."
+        ),
+        # record intro
+        "record_intro": (
+            "End your program with `var ANSWER = <expression>;` where "
+            "`<expression>` is an object with exactly these fields:"
+        ),
+        # field: dist object
+        "field_dist_object": "the distribution object returned by `Infer`",
+        # field: dist draws
+        "field_dist_draws": (
+            "one sampled draw from the process "
+            "(the program will be run many times to collect the distribution)"
+        ),
+        # field: value
+        "field_value": "the computed value",
+        # field: value realvec
+        "field_value_realvec": "the computed value (a list of numbers)",
+    },
+    "pyro": {
+        "binding_prefix": "End your program with a top-level assignment `ANSWER = <expression>`",
+        "realvec_suffix": "a list of numbers (a 1-D tensor is also accepted)",
+        "dist_object": (
+            "the posterior distribution — either a dict mapping each outcome to its "
+            "probability, a `pyro.distributions`/`torch.distributions` object, or a "
+            "list of (many) posterior samples"
+        ),
+        "dist_object_sentence": (
+            "End your program with a top-level assignment `ANSWER = <expression>` "
+            "where `<expression>` is the posterior distribution — either a dict "
+            "mapping each outcome to its probability, a "
+            "`pyro.distributions`/`torch.distributions` object, or a list of (many) "
+            "posterior samples."
+        ),
+        "dist_draws_sentence": (
+            "End your program with a top-level assignment `ANSWER = <expression>` "
+            "where `<expression>` evaluates to **one** sampled draw from the process. "
+            "Your program will be run many times with different random seeds; "
+            "each run contributes one draw to the collected distribution."
+        ),
+        "record_intro": (
+            "End your program with a top-level assignment `ANSWER = <expression>` "
+            "where `<expression>` is a dict with exactly these keys:"
+        ),
+        "field_dist_object": (
+            "the posterior distribution — either a dict mapping each outcome to its "
+            "probability, a `pyro.distributions`/`torch.distributions` object, or a "
+            "list of (many) posterior samples"
+        ),
+        "field_dist_draws": (
+            "one sampled draw from the process "
+            "(the program will be run many times to collect the distribution)"
+        ),
+        "field_value": "the computed value",
+        "field_value_realvec": "the computed value (a list of numbers; a 1-D tensor is also accepted)",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Contract paragraph generation
 # ---------------------------------------------------------------------------
 
@@ -58,25 +141,24 @@ def _support_contract(spec: Spec) -> str:
     return f"The answer is exactly one of: {labels_str}."
 
 
-def _contract_paragraph(spec: Spec) -> str:
+def _contract_paragraph(spec: Spec, language: str = "webppl") -> str:
     """Return the harness-contract sentence(s) for a spec."""
-    return _contract_for(spec)
+    return _contract_for(spec, language)
 
 
-def _contract_for(spec: Spec) -> str:
+def _contract_for(spec: Spec, language: str = "webppl") -> str:
     """Recursively produce the contract text fragment for a spec node."""
+    if language not in _LANG:
+        raise ValueError(f"unknown language: {language!r}")
+    lang = _LANG[language]
+
     if spec.kind == "value":
+        prefix = lang["binding_prefix"]
         if spec.domain == "realvec":
-            binding = (
-                f"End your program with `var ANSWER = <expression>;` where "
-                f"`<expression>` evaluates to the computed value. "
-                f"For a real-valued vector, ANSWER should be a list of numbers."
-            )
+            realvec = lang["realvec_suffix"]
+            binding = f"{prefix} where `<expression>` evaluates to the computed value. {realvec}"
         else:
-            binding = (
-                f"End your program with `var ANSWER = <expression>;` where "
-                f"`<expression>` evaluates to the computed value."
-            )
+            binding = f"{prefix} where `<expression>` evaluates to the computed value."
         support_text = _support_contract(spec)
         if support_text:
             return binding + " " + support_text
@@ -86,17 +168,9 @@ def _contract_for(spec: Spec) -> str:
         labels_text = _labels_contract(spec)
         support_text = _support_contract(spec)
         if spec.protocol == "object":
-            base = (
-                f"End your program with `var ANSWER = <expression>;` where "
-                f"`<expression>` is the distribution object returned by `Infer`."
-            )
+            base = lang["dist_object_sentence"]
         else:  # draws
-            base = (
-                f"End your program with `var ANSWER = <expression>;` where "
-                f"`<expression>` evaluates to **one** sampled draw from the process. "
-                f"Your program will be run many times with different random seeds; "
-                f"each run contributes one draw to the collected distribution."
-            )
+            base = lang["dist_draws_sentence"]
         extras = " ".join(s for s in [labels_text, support_text] if s)
         if extras:
             return base + " " + extras
@@ -106,24 +180,24 @@ def _contract_for(spec: Spec) -> str:
     assert spec.kind == "record"
     field_descriptions = []
     for name, fspec in spec.fields:
-        field_descriptions.append(_field_contract(name, fspec))
+        field_descriptions.append(_field_contract(name, fspec, language))
 
     fields_text = "\n".join(f"  - {d}" for d in field_descriptions)
-
-    return (
-        f"End your program with `var ANSWER = <expression>;` where "
-        f"`<expression>` is an object with exactly these fields:\n"
-        f"{fields_text}"
-    )
+    intro = lang["record_intro"]
+    return f"{intro}\n{fields_text}"
 
 
-def _field_contract(name: str, spec: Spec) -> str:
+def _field_contract(name: str, spec: Spec, language: str = "webppl") -> str:
     """One-line description for a record field."""
+    if language not in _LANG:
+        raise ValueError(f"unknown language: {language!r}")
+    lang = _LANG[language]
+
     if spec.kind == "value":
         if spec.domain == "realvec":
-            base = f"`{name}`: the computed value (a list of numbers)."
+            base = f"`{name}`: {lang['field_value_realvec']}."
         else:
-            base = f"`{name}`: the computed value."
+            base = f"`{name}`: {lang['field_value']}."
         support_text = _support_contract(spec)
         if support_text:
             return base + " " + support_text
@@ -133,12 +207,9 @@ def _field_contract(name: str, spec: Spec) -> str:
         labels_text = _labels_contract(spec)
         support_text = _support_contract(spec)
         if spec.protocol == "object":
-            base = f"`{name}`: the distribution object returned by `Infer`."
+            base = f"`{name}`: {lang['field_dist_object']}."
         else:  # draws
-            base = (
-                f"`{name}`: one sampled draw from the process "
-                f"(the program will be run many times to collect the distribution)."
-            )
+            base = f"`{name}`: {lang['field_dist_draws']}."
         extras = " ".join(s for s in [labels_text, support_text] if s)
         if extras:
             return base + " " + extras
@@ -147,13 +218,13 @@ def _field_contract(name: str, spec: Spec) -> str:
     # nested record
     assert spec.kind == "record"
     inner_fields = "; ".join(
-        f"`{n}`: {_field_contract_inline(n, f)}"
+        f"`{n}`: {_field_contract_inline(n, f, language)}"
         for n, f in spec.fields
     )
     return f"`{name}`: an object with fields {{{inner_fields}}}."
 
 
-def _field_contract_inline(name: str, spec: Spec) -> str:
+def _field_contract_inline(name: str, spec: Spec, language: str = "webppl") -> str:
     """Ultra-compact description used for nested record fields."""
     if spec.kind == "value":
         return "a computed value" + (" (list of numbers)" if spec.domain == "realvec" else "")
@@ -195,7 +266,9 @@ def render_problem(problem: dict, language: str = "webppl") -> str:
     model = stmt.get("model", "").strip()
     query = stmt.get("query", "").strip()
 
-    contract = _contract_paragraph(spec)
+    if language not in _LANG:
+        raise ValueError(f"unknown language: {language!r}")
+    contract = _contract_paragraph(spec, language)
 
     parts = []
     if given:
