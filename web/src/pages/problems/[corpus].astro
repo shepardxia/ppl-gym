@@ -1,0 +1,246 @@
+---
+// The problem browser — the original /c/ explorer shell, problem-native.
+import Layout from '@/layouts/Layout.astro';
+import ProblemEntry from '@/components/ProblemEntry.astro';
+import type { Corpus, ProblemRecord } from '@/lib/problems';
+import {
+  loadAllProblemsGrouped, loadGtAnswers, CORPORA, CORPUS_META,
+  problemChapter, problemLeaf,
+} from '@/lib/problems';
+import { SYSTEM_PROMPT_BASE, WEBPPL_PRIMER } from '@/lib/prompts';
+
+export const prerender = true;
+
+export async function getStaticPaths() {
+  const grouped = await loadAllProblemsGrouped();
+  return CORPORA.map((corpus) => ({
+    params: { corpus },
+    props: { records: grouped[corpus] },
+  }));
+}
+
+const { corpus } = Astro.params as { corpus: Corpus };
+const { records } = Astro.props as { records: ProblemRecord[] };
+const meta = CORPUS_META[corpus];
+const gtAnswers = await loadGtAnswers();
+const allGrouped = await loadAllProblemsGrouped();
+
+// ── Verification buckets (sidebar glyphs + filter chips) ──
+interface PBucket { id: string; label: string; glyph: string; tone: string; desc: string }
+const PBUCKETS: PBucket[] = [
+  { id: 'verified', label: 'verified',  glyph: '✓', tone: 'great', desc: 'solver gate accepted and pyro cross-verified' },
+  { id: 'partial',  label: 'partial',   glyph: '◐', tone: 'ok',    desc: 'one of the two gates verified' },
+  { id: 'attention', label: 'attention', glyph: '✗', tone: 'bad',  desc: 'a gate failed or flagged this problem' },
+  { id: 'na',       label: 'ungated',   glyph: '·', tone: 'na',    desc: 'missing gate data' },
+];
+const PB_BY_ID = Object.fromEntries(PBUCKETS.map((b) => [b.id, b]));
+
+function bucketOf(r: ProblemRecord): string {
+  const solver = r.gateB?.status;
+  const cross = r.crosscheck?.status;
+  if (!solver && !cross) return 'na';
+  const sOk = solver === 'accept';
+  const xOk = cross === 'pass';
+  if (sOk && xOk) return 'verified';
+  if (sOk || xOk) return 'partial';
+  return 'attention';
+}
+
+const bucketCounts: Record<string, number> = Object.fromEntries(PBUCKETS.map((b) => [b.id, 0]));
+for (const r of records) bucketCounts[bucketOf(r)] += 1;
+
+// group by chapter
+const groupedMap = new Map<string, ProblemRecord[]>();
+for (const r of records) {
+  const k = problemChapter(r.problem.problem_id);
+  if (!groupedMap.has(k)) groupedMap.set(k, []);
+  groupedMap.get(k)!.push(r);
+}
+const groupKeys = Array.from(groupedMap.keys()).sort();
+const firstId = records[0]?.problem.problem_id ?? '';
+---
+
+<Layout title={`${meta.label} — ppl-gym`}>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <a href="/">
+            <span class="brand-mark"><span>{'{'}</span><span class="brand-mark-tilde">~</span><span>{'}'}</span></span>
+            <span class="brand-name">ppl<span class="brand-name-dim">·</span>gym</span>
+          </a>
+        </div>
+        <nav class="crumbs">
+          <a class="crumb crumb-link" href="/">corpora</a>
+          <span class="crumb-sep">/</span>
+          <div class="coll-picker" data-coll-picker>
+            <button type="button" class="crumb crumb-active" data-coll-toggle aria-expanded="false">
+              <span>{meta.label}</span>
+              <span class="crumb-caret">▾</span>
+            </button>
+            <div class="coll-menu" data-coll-menu hidden>
+              {CORPORA.map((c) => (
+                <a class={`coll-menu-item${c === corpus ? ' coll-menu-item-on' : ''}`} href={`/problems/${c}/`}>
+                  <div class="coll-menu-name">{CORPUS_META[c].label}</div>
+                  <div class="coll-menu-meta">
+                    <span>{(allGrouped[c] ?? []).length} problems</span>
+                    <span class="coll-menu-dot">·</span>
+                    <span>{CORPUS_META[c].sourceName}</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </nav>
+      </div>
+      <div class="topbar-mid">
+        <span class="topbar-stat">
+          <span class="topbar-stat-key">problems</span>
+          <span class="topbar-stat-val"><span data-visible-count>{records.length}</span><span class="topbar-stat-dim"> / {records.length}</span></span>
+        </span>
+        <span class="topbar-stat">
+          <span class="topbar-stat-key">columns</span>
+          <span class="topbar-stat-val">webppl · pyro</span>
+        </span>
+      </div>
+      <div class="topbar-right">
+        <a class="crumb crumb-link" href="/methodology/">methodology</a>
+        <span class="kbd-hint">
+          <kbd>↑↓</kbd><kbd>jk</kbd> nav · <kbd>/</kbd> search
+        </span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="sidebar-search">
+          <span class="sidebar-search-icon">⌕</span>
+          <input class="sidebar-search-input" id="search" type="search"
+                 placeholder="search id / statement" aria-label="search problems" />
+          <kbd class="sidebar-search-kbd">/</kbd>
+        </div>
+
+        <div class="sidebar-buckets">
+          {PBUCKETS.map((b) => (
+            <button
+              type="button"
+              class={`chip bucket-${b.tone}${(bucketCounts[b.id] ?? 0) === 0 ? ' chip-empty' : ''}`}
+              data-bk={b.id}
+              title={`${b.label} — ${b.desc} · ${bucketCounts[b.id]} problems`}
+              aria-pressed="false"
+            >
+              <span class="chip-glyph">{b.glyph}</span>
+              <span class="chip-label">{b.label}</span>
+              <span class="chip-count">{bucketCounts[b.id]}</span>
+            </button>
+          ))}
+          <button type="button" class="chip chip-fb" data-fb-filter="reviewed"
+                  title="problems with any feedback" aria-pressed="false">
+            <span class="chip-glyph">★</span>
+            <span class="chip-label">reviewed</span>
+            <span class="chip-count" data-reviewed-count>0</span>
+          </button>
+          <button type="button" class="chip chip-unfb" data-fb-filter="unreviewed"
+                  title="problems not yet reviewed" aria-pressed="false">
+            <span class="chip-glyph">☆</span>
+            <span class="chip-label">unreviewed</span>
+            <span class="chip-count" data-unreviewed-count>{records.length}</span>
+          </button>
+        </div>
+
+        <div class="sidebar-list" id="list-scroll" role="listbox" aria-label="problems">
+          {groupKeys.map((gk) => {
+            const grp = groupedMap.get(gk)!;
+            return (
+              <div class="sidebar-group" data-group={gk}>
+                <div class="sidebar-group-hd">
+                  <span class="sidebar-group-name">{gk}</span>
+                  <span class="sidebar-group-count">{grp.length}</span>
+                </div>
+                {grp.map((r) => {
+                  const pid = r.problem.problem_id;
+                  const b = PB_BY_ID[bucketOf(r)];
+                  const d = r.crosscheck?.distance ?? null;
+                  const tol = r.crosscheck?.tol ?? null;
+                  const frac = d != null && tol ? Math.min(1, d / tol) : null;
+                  const search = [pid, r.problem.statement.given, r.problem.statement.query]
+                    .join(' ').toLowerCase().slice(0, 600);
+                  return (
+                    <button
+                      type="button"
+                      class="atom-row"
+                      role="option"
+                      data-aid={pid}
+                      data-bk={b.id}
+                      data-tv={d != null ? d.toFixed(6) : ''}
+                      data-search={search}
+                      data-group={gk}
+                    >
+                      <div class="atom-row-top">
+                        <span class={`bucket bucket-${b.tone} bucket-xs`}>
+                          <span class="bucket-glyph">{b.glyph}</span>
+                        </span>
+                        <span class="atom-row-id">{problemLeaf(pid)}</span>
+                        <span class="fb-pip" data-fb-pip hidden></span>
+                      </div>
+                      <div class={`tvbar bucket-${b.tone}`}>
+                        {frac != null ? (
+                          <Fragment>
+                            <div class="tvbar-track">
+                              <div class="tvbar-fill" style={`width:${frac * 100}%`}></div>
+                            </div>
+                            <span class="tvbar-num" title="cross-language distance / tolerance">{d!.toFixed(3)}</span>
+                          </Fragment>
+                        ) : (
+                          <span class="tvbar-label">{b.label}</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+          <div class="sidebar-empty" data-empty hidden>no problems match.</div>
+        </div>
+      </aside>
+
+      <main class="detail-pane">
+        <div class="detail-host" id="detail-host">
+          <div class="detail-empty" data-detail-empty>Select a problem from the list →</div>
+          {records.map((r) => (
+            <ProblemEntry
+              record={r}
+              gtAnswers={gtAnswers.get(r.problem.problem_id)}
+              corpus={corpus}
+            />
+          ))}
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="name-modal" role="dialog" aria-modal="true" aria-label="display name" hidden>
+    <div class="modal">
+      <div class="modal-hd">your display name</div>
+      <div class="modal-body">
+        <p>Feedback is attributed to a name you pick — no account needed.</p>
+        <input class="modal-input" id="name-modal-input" placeholder="e.g. alex r." autocomplete="off" />
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn-secondary" id="name-modal-cancel">cancel</button>
+        <button type="button" class="btn-primary" id="name-modal-save" disabled>save</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="application/json" id="ppl-meta" set:html={JSON.stringify({
+    slug: corpus,
+    firstAtomId: firstId,
+    primaryId: 'pyro',
+    runs: [{ id: 'pyro', short: 'pyro', label: 'Pyro realization' }],
+  }).replace(/</g, '\\u003c')} />
+  <script type="application/json" id="ppl-system-prompt" set:html={JSON.stringify(SYSTEM_PROMPT_BASE).replace(/</g, '\\u003c')} />
+  <script type="application/json" id="ppl-primer" set:html={JSON.stringify(WEBPPL_PRIMER).replace(/</g, '\\u003c')} />
+  <script src="/browse.js" is:inline></script>
+</Layout>

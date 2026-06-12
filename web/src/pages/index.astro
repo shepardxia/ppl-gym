@@ -1,30 +1,92 @@
 ---
 import Layout from '@/layouts/Layout.astro';
+import { loadAllProblemsGrouped, datasetStats, CORPORA, CORPUS_META } from '@/lib/problems';
 import { loadAllCollections } from '@/lib/atoms';
 
 export const prerender = true;
 
-const collections = await loadAllCollections();
+const grouped = await loadAllProblemsGrouped();
+const stats = await datasetStats();
+const legacy = await loadAllCollections();
+
+function verifiedCount(c: (typeof CORPORA)[number]): number {
+  return (grouped[c] ?? []).filter((r) => r.gateB?.status === 'accept' && r.crosscheck?.status === 'pass').length;
+}
 ---
 
-<Layout title="ppl-gym — atom browser">
+<Layout title="ppl-gym — problem browser">
   <div class="home">
     <h1>ppl-gym</h1>
     <p class="tagline">
-      A benchmark of self-contained WebPPL exercises for evaluating LLMs on probabilistic programming.
-      Pick a collection to browse, inspect runs, and leave feedback.
+      Probabilistic-programming problems with machine-verified ground truths in
+      WebPPL and Pyro — {stats.total} problems, {stats.webpplVerified}/{stats.total} solver-verified,
+      {stats.pyroVerified}/{stats.total} cross-language-verified.
+      Pick a corpus to browse, inspect verification evidence, and leave feedback.
+    </p>
+
+    <div class="collection-grid">
+      {CORPORA.map((c) => {
+        const meta = CORPUS_META[c];
+        const records = grouped[c] ?? [];
+        return (
+          <a class="collection-card" href={`/problems/${c}/`}>
+            <h3>{meta.label}</h3>
+            <div class="cdesc">{meta.description}</div>
+            <div class="cmeta">
+              <b>{records.length}</b> problems · {verifiedCount(c)} fully verified · {meta.sourceName}
+            </div>
+          </a>
+        );
+      })}
+    </div>
+
+    <h2 class="home-sub">project</h2>
+    <div class="collection-grid">
+      <a class="collection-card" href="/methodology/">
+        <h3>methodology</h3>
+        <div class="cdesc">How problems are authored and verified: the statement contract, measured tolerances, and the two gates.</div>
+      </a>
+      <a class="collection-card" href="/updates/">
+        <h3>updates</h3>
+        <div class="cdesc">Dataset and pipeline changes, newest first.</div>
+      </a>
+      <a class="collection-card" href="/reviewing/">
+        <h3>reviewing</h3>
+        <div class="cdesc">What to look at on a problem page, and how feedback is triaged.</div>
+      </a>
+      <a class="collection-card" href="/results/">
+        <h3>results</h3>
+        <div class="cdesc">Model baselines under the current pipeline (pending).</div>
+      </a>
+    </div>
+
+    <h2 class="home-sub">legacy archives</h2>
+    <p class="home-legacy-note">
+      The pre-redesign atom collections with their original LM eval runs — kept browsable for reference.
     </p>
     <div class="collection-grid">
-      {collections.map((c) => (
-        <a class="collection-card" href={`/c/${c.collection.slug}`}>
+      {legacy.map((c) => (
+        <a class="collection-card collection-card-legacy" href={`/c/${c.collection.slug}`}>
           <h3>{c.collection.label}</h3>
-          <div class="cdesc">{c.collection.description ?? c.collection.jsonlPath}</div>
           <div class="cmeta">
             <b>{c.atoms.length}</b> atoms · {Object.keys(c.runs).length} runs
-            {c.primary && (<Fragment> · primary {c.primary.id}</Fragment>)}
           </div>
         </a>
       ))}
     </div>
   </div>
 </Layout>
+
+<style>
+  .home-sub {
+    font: 12.5px var(--font-mono);
+    text-transform: uppercase; letter-spacing: .08em;
+    color: var(--fg-dim);
+    margin: 36px 0 12px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+  .home-legacy-note { font-size: 14px; color: var(--fg-dim); margin: 0 0 12px; }
+  .collection-card-legacy { opacity: .75; }
+  .collection-card-legacy:hover { opacity: 1; }
+</style>

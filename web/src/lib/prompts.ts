@@ -6,11 +6,14 @@
 import systemBase from '../../../data/prompts/system_base.txt?raw';
 // @ts-expect-error Vite plugin types for ?raw imports
 import webpplPrimer from '../../../data/prompts/webppl_primer.txt?raw';
+// @ts-expect-error Vite plugin types for ?raw imports
+import pyroPrimer from '../../../data/prompts/pyro_primer.txt?raw';
 
 export const PROMPT_VERSION = 'v2-atom';
 
 export const SYSTEM_PROMPT_BASE: string = (systemBase as string).replace(/\n+$/, '');
 export const WEBPPL_PRIMER: string = (webpplPrimer as string).replace(/\n+$/, '');
+export const PYRO_PRIMER: string = (pyroPrimer as string).replace(/\n+$/, '');
 
 export function systemPrompt(withPrimer: boolean): string {
   return withPrimer ? `${SYSTEM_PROMPT_BASE}\n\n${WEBPPL_PRIMER}` : SYSTEM_PROMPT_BASE;

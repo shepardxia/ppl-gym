@@ -266,3 +266,91 @@ export async function datasetStats(): Promise<DatasetStats> {
     pyroVerified: all.filter((r) => r.crosscheck?.status === 'pass').length,
   };
 }
+
+// ─── Grouping helpers (sidebar) ──────────────────────────────────────────────
+
+/** 'probmods2-conditioning/ex5.b' → 'conditioning' (chapter within corpus). */
+export function problemChapter(problemId: string): string {
+  const head = problemId.split('/')[0];
+  return head.replace(/^(probmods2|dippl|forestdb)-/, '');
+}
+
+/** 'probmods2-conditioning/ex5.b' → 'ex5.b'. */
+export function problemLeaf(problemId: string): string {
+  const i = problemId.indexOf('/');
+  return i === -1 ? problemId : problemId.slice(i + 1);
+}
+
+// ─── Canonical GT answers (data/problems/_gt_answers.jsonl) ─────────────────
+
+export interface GtAnswerRow {
+  problem_id: string;
+  language: string;
+  answer?: Record<string, unknown>;
+  error?: string;
+}
+
+let _gtCache: Map<string, Record<string, GtAnswerRow>> | null = null;
+
+export async function loadGtAnswers(): Promise<Map<string, Record<string, GtAnswerRow>>> {
+  if (_gtCache) return _gtCache;
+  const rows = await (async () => {
+    const { readFile } = await import('node:fs/promises');
+    try {
+      const text = await readFile(join(DATA_DIR, 'problems', '_gt_answers.jsonl'), 'utf8');
+      return text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as GtAnswerRow);
+    } catch { return [] as GtAnswerRow[]; }
+  })();
+  const out = new Map<string, Record<string, GtAnswerRow>>();
+  for (const r of rows) {
+    if (!out.has(r.problem_id)) out.set(r.problem_id, {});
+    out.get(r.problem_id)![r.language] = r;
+  }
+  _gtCache = out;
+  return out;
+}
+
+/** Canonical answer wire → the RenderOutput shape the chart renderer expects. */
+export function canonicalToRenderOutput(a: Record<string, unknown> | undefined): unknown {
+  if (!a) return null;
+  const kind = a.kind as string;
+  if (kind === 'dist_enum') {
+    return {
+      kind: 'distribution',
+      support: (a.support as unknown[]).map((s) => typeof s === 'string' ? s : JSON.stringify(s)),
+      probs: a.probs as number[],
+    };
+  }
+  if (kind === 'cloud') {
+    // histogram the samples into {kind: 'samples', support, counts}
+    const counts = new Map<string, number>();
+    for (const s of a.samples as unknown[]) {
+      const k = typeof s === 'number' ? String(Math.round(s * 1000) / 1000) : JSON.stringify(s);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    const entries = [...counts.entries()];
+    // numeric supports sort numerically
+    entries.sort((x, y) => {
+      const nx = Number(x[0]), ny = Number(y[0]);
+      if (!Number.isNaN(nx) && !Number.isNaN(ny)) return nx - ny;
+      return x[0] < y[0] ? -1 : 1;
+    });
+    return { kind: 'samples', support: entries.map((e) => e[0]), counts: entries.map((e) => e[1]) };
+  }
+  if (kind === 'dist_param') {
+    const params = a.params as Record<string, number>;
+    const inner = Object.entries(params).map(([k, v]) => `${k}: ${v}`).join(', ');
+    return { kind: 'value', value: `${a.family}(${inner})` };
+  }
+  if (kind === 'exact') {
+    return { kind: 'value', value: a.value };
+  }
+  if (kind === 'record') {
+    const fields: Record<string, unknown> = {};
+    for (const [n, v] of Object.entries(a.fields as Record<string, Record<string, unknown>>)) {
+      fields[n] = canonicalToRenderOutput(v);
+    }
+    return { kind: 'record', fields };
+  }
+  return null;
+}

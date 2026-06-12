@@ -1,8 +1,6 @@
 ---
-import Layout from '@/layouts/Layout.astro';
-import ProblemDetail from '@/components/ProblemDetail.astro';
-import SiteHeader from '@/components/SiteHeader.astro';
-import { loadAllProblems, problemSlug, type ProblemRecord } from '@/lib/problems';
+// Permalink redirect: /p/<slug> → the problem browser, problem selected.
+import { loadAllProblems, problemSlug } from '@/lib/problems';
 
 export const prerender = true;
 
@@ -10,16 +8,22 @@ export async function getStaticPaths() {
   const problems = await loadAllProblems();
   return problems.map((rec) => ({
     params: { slug: problemSlug(rec.problem.problem_id) },
-    props: { record: rec },
+    props: { corpus: rec.corpus, problemId: rec.problem.problem_id },
   }));
 }
 
-const { record } = Astro.props as { record: ProblemRecord };
+const { corpus, problemId } = Astro.props as { corpus: string; problemId: string };
+const target = `/problems/${corpus}/#${encodeURIComponent(problemId)}`;
 ---
-
-<Layout title={`${record.problem.problem_id} — ppl-gym`}>
-  <div class="page-wrap">
-    <SiteHeader active="/problems" />
-    <ProblemDetail record={record} />
-  </div>
-</Layout>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+    <link rel="canonical" href={target} />
+    <title>{problemId} — ppl-gym</title>
+  </head>
+  <body>
+    <p>Redirecting to <a href={target}>{problemId}</a>…</p>
+  </body>
+</html>

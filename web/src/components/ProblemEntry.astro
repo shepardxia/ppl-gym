@@ -1,0 +1,296 @@
+---
+// One problem's detail entry — the AtomDetail design, problem-native.
+// Sources: 'gt' = WebPPL ground truth (A), 'pyro' = Pyro realization (B).
+import type { ProblemRecord, GtAnswerRow } from '@/lib/problems';
+import { specChip, problemChapter, problemLeaf, canonicalToRenderOutput } from '@/lib/problems';
+import { statusLabel } from '@/lib/tones';
+import { renderCode, renderChart, renderValueOutput, isDistLike, atomDomId } from '@/lib/render';
+import type { RenderOutput } from '@/lib/types';
+
+interface Props {
+  record: ProblemRecord;
+  gtAnswers: Record<string, GtAnswerRow> | undefined;
+  corpus: string;
+}
+const { record, gtAnswers, corpus } = Astro.props;
+const { problem, realization, pyroRealization, gateA, gateB, crosscheck } = record;
+const pid = problem.problem_id;
+
+const chip = specChip(problem.answer_spec);
+const webpplOut = canonicalToRenderOutput(gtAnswers?.webppl?.answer) as RenderOutput;
+const pyroOut = canonicalToRenderOutput(gtAnswers?.pyro?.answer) as RenderOutput;
+
+// tone mapping for the original bucket-badge classes (great/good/poor/bad/na)
+function gateTone(status: string | undefined): string {
+  if (!status) return 'na';
+  if (status === 'accept' || status === 'pass' || status === 'ok') return 'great';
+  if (status === 'gt_suspect' || status === 'underdetermined') return 'poor';
+  if (status === 'draft') return 'ok';
+  if (status === 'reviewed') return 'good';
+  return 'bad';
+}
+const solverTone = gateTone(gateB?.status);
+const crossTone = gateTone(crosscheck?.status);
+
+function fmt(v: number | undefined | null): string {
+  return v == null ? '—' : v.toFixed(4);
+}
+
+interface SourceData {
+  key: string; label: string; short: string;
+  code: string; output: RenderOutput; error: string | null;
+  bucket: null; tv: number | null; kl: null;
+}
+const gtSrc: SourceData = {
+  key: 'gt', label: 'WebPPL ground truth', short: 'webppl',
+  code: realization?.code ?? '', output: webpplOut, error: null,
+  bucket: null, tv: null, kl: null,
+};
+const pyroSrc: SourceData = {
+  key: 'pyro', label: 'Pyro realization', short: 'pyro',
+  code: pyroRealization?.code ?? '', output: pyroOut, error: null,
+  bucket: null, tv: crosscheck?.distance ?? null, kl: null,
+};
+
+function escape(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
+  const tagClass = side === 'a' ? 'tag-a' : 'tag-b';
+  const lang = src.key === 'pyro' ? 'python' : 'webppl';
+  const body = src.code
+    ? renderCode(src.code, lang)
+    : `<div class="out-empty">(no ${escape(src.short)} realization)</div>`;
+  return (
+    `<div class="compare-col">` +
+      `<div class="compare-col-hd">` +
+        `<span class="compare-col-tag ${tagClass}">${escape(src.short)}</span>` +
+        `<span class="compare-col-label">${escape(src.label)}</span>` +
+      `</div>` +
+      body +
+    `</div>`
+  );
+}
+const compareGridHtml = compareColHtml(gtSrc, 'a') + compareColHtml(pyroSrc, 'b');
+
+const distLike = isDistLike(webpplOut) || isDistLike(pyroOut);
+let chartSectionHtml = '';
+if (distLike) {
+  chartSectionHtml = (
+    `<div class="compare-chart">` +
+      `<div class="section-title">` +
+        `<span class="section-title-num">02</span>` +
+        `<span>answer overlay — webppl vs pyro</span>` +
+        `<span class="section-title-meta">${escape(chip)}</span>` +
+      `</div>` +
+      renderChart({
+        a: isDistLike(webpplOut) ? webpplOut : null,
+        b: isDistLike(pyroOut) ? pyroOut : null,
+        labelA: 'webppl', labelB: 'pyro',
+      }) +
+    `</div>`
+  );
+} else if (webpplOut || pyroOut) {
+  chartSectionHtml = (
+    `<div class="compare-chart">` +
+      `<div class="section-title">` +
+        `<span class="section-title-num">02</span>` +
+        `<span>answer</span>` +
+        `<span class="section-title-meta">${escape(chip)}</span>` +
+      `</div>` +
+      `<div class="compare-grid">` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-a">webppl</span></div>${renderValueOutput(webpplOut)}</div>` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-b">pyro</span></div>${renderValueOutput(pyroOut, '(no pyro answer export)')}</div>` +
+      `</div>` +
+    `</div>`
+  );
+}
+
+// payload for browse.js source switching (gt + pyro)
+const sourcePayload = {
+  gt:   { short: gtSrc.short, label: gtSrc.label, code: gtSrc.code, output: gtSrc.output, error: null, bucket: null, tv: null, kl: null },
+  pyro: { short: pyroSrc.short, label: pyroSrc.label, code: pyroSrc.code, output: pyroSrc.output, error: null, bucket: null, tv: pyroSrc.tv, kl: null },
+};
+---
+
+<section class="detail" id={atomDomId(pid)} data-aid={pid}>
+  <div class="detail-hd">
+    <div class="detail-hd-top">
+      <div class="detail-hd-id">
+        <span class="detail-hd-source">{corpus}-{problemChapter(pid)}</span>
+        <span class="detail-hd-slash">/</span>
+        <span class="detail-hd-name">{problemLeaf(pid)}</span>
+      </div>
+      <div class="detail-hd-meta">
+        <span class="meta-pill">
+          <span class="meta-pill-key">answer</span>
+          <span class="meta-pill-val">{chip}</span>
+        </span>
+        <span class="meta-pill" title="solver re-derivation gate">
+          <span class="meta-pill-key">solver</span>
+          <span class={`bucket bucket-${solverTone} bucket-sm`}>
+            <span class="bucket-label">{gateB ? statusLabel(gateB.status) : '—'}</span>
+          </span>
+        </span>
+        <span class="meta-pill" title="cross-language gate (pyro vs webppl GT)">
+          <span class="meta-pill-key">pyro</span>
+          <span class={`bucket bucket-${crossTone} bucket-sm`}>
+            <span class="bucket-label">{crosscheck ? statusLabel(crosscheck.status) : '—'}</span>
+            {crosscheck?.distance != null && <span class="bucket-tv">{fmt(crosscheck.distance)}</span>}
+          </span>
+        </span>
+      </div>
+    </div>
+
+    <div class="detail-hd-strip">
+      <span class="detail-hd-strip-lbl">sources</span>
+      <button type="button" class="run-pill run-pill-gt is-source-a" data-source="gt"
+        title={"WebPPL ground truth\nclick: set as B (right) · shift-click: set as A (left)"}>
+        <span class="run-pill-glyph">●</span>
+        <span class="run-pill-name">webppl</span>
+      </button>
+      <button type="button" class={`run-pill bucket-${crossTone} is-source-b`} data-source="pyro"
+        title={"Pyro realization — crosscheck vs WebPPL GT\nclick: set as B (right) · shift-click: set as A (left)"}>
+        <span class="run-pill-glyph">◆</span>
+        <span class="run-pill-name">pyro</span>
+        {crosscheck?.distance != null && <span class="run-pill-tv">{fmt(crosscheck.distance)}</span>}
+      </button>
+    </div>
+  </div>
+
+  <section class="detail-section">
+    <div class="section-title">
+      <span class="section-title-num">00</span>
+      <span>statement</span>
+      <span class="section-title-meta">source: <code>{problem.provenance.source}</code></span>
+    </div>
+    <div class="prompt-card">
+      <div class="stmt-field-hd">given</div>
+      <p>{problem.statement.given}</p>
+      <div class="stmt-field-hd">model</div>
+      <p>{problem.statement.model}</p>
+      <div class="stmt-field-hd">query</div>
+      <p>{problem.statement.query}</p>
+    </div>
+    <div class="context-row">
+      <details class="collapse">
+        <summary>
+          <span class="collapse-title">answer spec</span>
+          <span class="collapse-meta">{chip}</span>
+        </summary>
+        <div class="collapse-body"><pre class="ctx-pre">{JSON.stringify(problem.answer_spec, null, 2)}</pre></div>
+      </details>
+      <details class="collapse">
+        <summary>
+          <span class="collapse-title">system prompt</span>
+          <span class="collapse-meta">constant across problems</span>
+        </summary>
+        <div class="collapse-body"><pre class="ctx-pre" data-sysprompt-placeholder>(system prompt loads here)</pre></div>
+      </details>
+      <details class="collapse">
+        <summary>
+          <span class="collapse-title">WebPPL primer</span>
+          <span class="collapse-meta">solver context</span>
+        </summary>
+        <div class="collapse-body"><pre class="ctx-pre" data-primer-placeholder>(primer loads here)</pre></div>
+      </details>
+    </div>
+  </section>
+
+  <section class="detail-section">
+    <div class="section-title">
+      <span class="section-title-num">01</span>
+      <span>realizations</span>
+      <span class="section-title-meta">comparing <code data-ab-label-a>webppl</code> vs <code data-ab-label-b>pyro</code></span>
+    </div>
+    <div class="compare" data-compare>
+      <div class="compare-grid" data-compare-grid set:html={compareGridHtml}></div>
+      <div class="compare-chart-slot" data-chart-slot set:html={chartSectionHtml}></div>
+    </div>
+  </section>
+
+  <section class="detail-section">
+    <div class="section-title">
+      <span class="section-title-num">03</span>
+      <span>verification</span>
+    </div>
+    <table class="other-runs">
+      <thead>
+        <tr><th>check</th><th>status</th><th>evidence</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="other-runs-name">GT self-consistency</span></td>
+          <td>
+            <span class={`bucket bucket-${gateTone(gateA?.status)} bucket-xs`}>
+              <span class="bucket-label">{gateA ? statusLabel(gateA.status) : '—'}</span>
+            </span>
+          </td>
+          <td class="num">floor {fmt(gateA?.floor)} ({gateA?.metric ?? '—'})</td>
+        </tr>
+        <tr>
+          <td><span class="other-runs-name">solver re-derivation</span></td>
+          <td>
+            <span class={`bucket bucket-${solverTone} bucket-xs`}>
+              <span class="bucket-label">{gateB ? statusLabel(gateB.status) : '—'}</span>
+            </span>
+          </td>
+          <td class="num">
+            {gateB ? `${gateB.n_pass ?? '—'}/${gateB.n_solvers ?? 2} solvers · d=[${(gateB.distances ?? []).map((d) => d == null ? '—' : d.toFixed(3)).join(', ')}] · ${gateB.gate_model ?? ''}` : '—'}
+          </td>
+        </tr>
+        <tr>
+          <td><span class="other-runs-name">cross-language (pyro)</span></td>
+          <td>
+            <span class={`bucket bucket-${crossTone} bucket-xs`}>
+              <span class="bucket-label">{crosscheck ? statusLabel(crosscheck.status) : '—'}</span>
+            </span>
+          </td>
+          <td class="num">
+            {crosscheck ? `d=${fmt(crosscheck.distance)} ≤ tol ${fmt(crosscheck.tol)} · floors ${fmt(crosscheck.target_floor)}/${fmt(crosscheck.reference_floor)}` : '—'}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="feedback" data-feedback data-collection={corpus} data-dataset-version="problems-v1">
+    <div class="feedback-hd">
+      <span class="section-title-num">★</span>
+      <span>feedback on this problem</span>
+      <span class="feedback-rater" data-fb-rater-host hidden>
+        as <strong data-fb-rater-name></strong>
+        <button type="button" class="link-btn" data-fb-change-name>change</button>
+      </span>
+    </div>
+    <div class="feedback-body">
+      <div class="feedback-votes">
+        <button type="button" class="vote vote-up" data-vote="up">
+          <span aria-hidden="true">▲</span> looks right
+        </button>
+        <button type="button" class="vote vote-down" data-vote="down">
+          <span aria-hidden="true">▼</span> issue
+        </button>
+      </div>
+      <textarea class="feedback-text" data-fb-text rows="2"
+        placeholder="optional comment — statement, realization, or verification issues?"></textarea>
+      <button type="button" class="btn-primary" data-fb-submit disabled>submit</button>
+    </div>
+    <div class="feedback-ack" data-fb-ack hidden></div>
+    <div class="feedback-prev" data-fb-prev hidden></div>
+  </div>
+
+  <script type="application/json" data-source-payload={pid} set:html={JSON.stringify(sourcePayload).replace(/</g, '\\u003c')} />
+</section>
+
+<style>
+  .stmt-field-hd {
+    font: 11.5px var(--font-mono);
+    text-transform: uppercase; letter-spacing: .07em;
+    color: var(--fg-dim);
+    margin: 12px 0 2px;
+  }
+  .stmt-field-hd:first-child { margin-top: 0; }
+  .prompt-card p { margin: 0 0 4px; }
+</style>
