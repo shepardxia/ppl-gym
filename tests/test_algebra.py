@@ -1006,3 +1006,12 @@ def test_mapping_dist_real_w1_comparable():
     ref = canonicalize({"kind": "dist_enum", "support": [0, 1], "probs": [0.5, 0.5]}, DIST_INT)
     d = distance(c, ref, DIST_INT)
     assert d.value == pytest.approx(0.0)
+
+
+def test_mapping_key_prefers_declared_string_over_json_literal():
+    # "null" parses to None via json.loads; with the string declared in the
+    # spec's support, the raw-string reading wins.
+    spec = parse_spec({"kind": "dist", "domain": "finite",
+                       "support": ["null", "every-not"]})
+    c = canonicalize({"null": 0.3, "every-not": 0.7}, spec)
+    assert set(c.support) == {"null", "every-not"}

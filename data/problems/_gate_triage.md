@@ -1,6 +1,6 @@
 # Gate phase-B triage
 
-## P4 cross-language campaign (Pyro) — CLOSED 2026-06-11: 115/115
+## P4 cross-language campaign (Pyro) — CLOSED 2026-06-11: 115/115 pass
 
 Full independent crosscheck (`eval.gate crosscheck --language pyro`): every Pyro
 realization agrees with the WebPPL GT within symmetric measured tolerances

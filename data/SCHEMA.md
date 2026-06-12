@@ -50,8 +50,10 @@ Design rationale and migration plan: `data/REDESIGN.md`.
 }
 ```
 
-Gate results live in the report JSONLs (`data/problems/_gate_report.jsonl`,
-`_gate_solver_report.jsonl`), keyed by problem_id — not on the realization record.
+Live columns: `data/realizations/webppl.jsonl` and `data/realizations/pyro.jsonl`
+(both 115/115 verified). Gate results live in the report JSONLs
+(`data/problems/_gate_report.jsonl`, `_gate_solver_report.jsonl`,
+`_gate_crosscheck_report.jsonl`), keyed by problem_id — not on the realization record.
 
 A realization's code must produce `ANSWER` **via the language's own modeling/inference
 machinery**. Serializer limitations are binding bugs, never prompt workarounds.
@@ -142,6 +144,11 @@ canonicalized inside the algebra (one alias table: Pyro `concentration1/0` → `
 `loc/scale` → `mu/sigma`, ...). Bool/int normalization (`0.0/1.0` ↔ `false/true`) is part
 of canonicalization, driven by the spec's domain.
 
+Mapping-form keys arrive as JSON strings and are parsed back to labels
+(`"true"` → bool, `"3"` → int); a key that parses to a JSON literal but whose raw
+string is in the spec's declared `support` keeps the string reading (the `"null"`
+label case).
+
 ### Comparison
 
 Defined on the object, between **any** pair of representations:
@@ -204,6 +211,18 @@ plus the multi-seed GT runs above, all compared under the spec distance.
 Triage is a queue (JSONL), reviewed by humans/collaborators through the web app.
 Nothing is silently dropped.
 
+## Cross-language gate (`gate crosscheck`)
+
+A new realization column is verified against an existing one: collect k seeded GT
+runs from BOTH languages, judge the reference's median run against the target's
+runs, with tolerance `margin × max(target_floor, reference_floor)` (and the
+metric's eps) — symmetric, so a sampled target is comparable against an exact
+reference and vice versa. Report: `data/problems/_gate_crosscheck_report.jsonl`.
+Acceptance additionally requires the code to express its model via the
+language's own machinery (audited mechanically — e.g. `pyro.sample`/`pyro.infer`
+present, no serializer wire-format construction in-program); matching numbers
+alone do not qualify a realization.
+
 ## Status vocabulary
 
 Every status string a consumer (web `tones.ts`, reports, scored rows) can see:
@@ -214,6 +233,7 @@ Every status string a consumer (web `tones.ts`, reports, scored rows) can see:
 | gate phase A (`_gate_report.jsonl`) | `ok` \| `ill_posed` \| `error` |
 | gate phase B (`_gate_solver_report.jsonl`) | `accept` \| `gt_suspect` \| `underdetermined` \| `solver_failure` |
 | problem `status.review` | `draft` \| `reviewed` \| `retired` |
+| cross-language gate (`_gate_crosscheck_report.jsonl`) | `pass` \| `fail` \| `ill_posed` \| `error` |
 
 Adding a status means updating the emitting module, this table, and
 `web/src/lib/tones.ts`.

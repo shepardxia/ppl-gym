@@ -79,7 +79,7 @@ Replaces the determinism gate, samples-self-consistency gate, and translation co
 A binding = executor + serializer (to canonical wire) + harness-contract text + primer. **Binding rule: ANSWER must be produced by the language's own modeling/inference machinery. Serializer limitations are binding bugs, never prompt workarounds.**
 
 - **WebPPL**: exists; serializer updated to structured `dist_param`.
-- **Pyro**: rebuild — (a) actually seed (`pyro.set_rng_seed` in header); (b) serialize `pyro.infer` artifacts (Importance/EmpiricalMarginal, MCMC samples, Predictive) into the algebra; (c) re-derive realizations for **all 115 problems** (probmods2 + dippl + forestdb) under the gate, not the previous 40. Validate the binding with ~3 hand-written pilot realizations (enum / empirical / parametric) before any LM translation.
+- **Pyro**: DONE in P4 — header seeds via `pyro.set_rng_seed`; serializer emits native forms (Empirical → weight-aggregated enumeration); all 115 problems re-derived and crosscheck-verified (3 hand-written pilots validated the binding first, as planned).
 - **Stan**: next column (cmdstanpy; posterior draws → dist_empirical_1d, generated quantities → value/samples). Opens ARM, BPA, example-models, posteriordb as problem sources.
 - **memo / pluck**: with the language creators; the review loop is their entry point.
 
@@ -111,11 +111,11 @@ Notables (full lists in the worklist JSONL):
 
 ## Phases
 
-- **P0 — DONE** (2026-06-09) — algebra + schema: `data/SCHEMA.md` + `eval/algebra.py` (96 tests; adversarially reviewed, 3 critical fixes incl. candidate self-noise in tolerance).
+- **P0 — DONE** (2026-06-09) — algebra + schema: `data/SCHEMA.md` + `eval/algebra.py` (96 tests at P0, grown to 166 by P4; adversarially reviewed, 3 critical fixes incl. candidate self-noise in tolerance).
 - **P1 — DONE** (2026-06-09) — all 123 WebPPL atoms re-authored → 115 problems in `data/problems/*.jsonl` + `data/realizations/webppl.jsonl`; 8 retired with rationale. Calibration round (10, full-read) then scale (113, self-checked + verified).
 - **P3 — DONE, ran before P2** (2026-06-09/11) — `eval/gate.py`: phase A (multi-seed GT floors; 115/115 ok after 7 ill-posed fixed/retired) + phase B (2× solver re-derivation via `solve`/`judge`; `--model` flag for stronger-model gates). Final: **115/115 solver-verified** (superseded by the P2 v2 re-gate: 114 sonnet-gated, 1 opus-gated — see P2 and `_gate_triage.md`) — full history + evidence in `data/problems/_gate_triage.md`. Structural fixes along the way: label-schema spec extension, vocabulary/form pinning rules, primer dialect patch, one prior-vs-kernel transcription class, one textbook off-by-one GT correction (occams ex1.2/ex1.3, deviation documented in the realization code).
 - **P2 — DONE** (2026-06-11) — harness collapse + web rewrite. `eval/corpus.py` (single dataset loader), `eval/score.py` (problem-centric: generations → judge-verdict rows), `eval/generate_batch.py` (problems in, batch out); ripped: harness.py, metrics.py, spec_metrics.py, answer_shape, atom-spec classifier/validator, GT cache script, legacy HTML renderer. Generality fixes folded in: finite specs declare `support` (label space; renderer enumerates it, canonicalizer rejects out-of-space mass as malformed — 39 problems declared, leak rule enforced: space from statement surface, never realized/reachability); gate `gt_suspect` uses `algebra.agreement()` (self-noise-derived tolerance, no fixed cutoff); every judge row stamped gate_model/timeout/n_solvers; phaseA merges by problem_id; solve --dry-run writes a .dry.json sidecar. Web: problem-centric `/p/<slug>` pages off problems/realizations/gate reports; legacy bucket vocabulary dead. Completed 2026-06-11: full re-gate under the new pipeline → report v2, 115/115 accept (112 first-pass sonnet; 2 statement fixes from convergent-miss investigations; 1 opus-gated row), uniformly stamped.
-- **P4** — Pyro binding rebuild (seeding, pyro.infer serialization) + re-derivation of all probmods problems + fresh baseline.
+- **P4 — DONE** (2026-06-11) — Pyro binding rebuilt (real seeding; native-form serializer; mapping-form dict in the algebra; language-aware renderer; `gate crosscheck` with symmetric measured tolerances). All 115 problems re-derived in Pyro and crosscheck-verified vs WebPPL GT (115/115; one WebPPL GT inference bias found and fixed along the way). Column: `data/realizations/pyro.jsonl`; campaign record in `data/problems/_gate_triage.md`.
 - **P5** — Stan binding; corpus growth via translation sourcing.
 
 ## Open decisions

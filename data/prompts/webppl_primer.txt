@@ -38,4 +38,4 @@ Conditioning: `condition(bool)` zeros out worlds where bool is false. `observe(d
 
 Tensors / utilities: `Vector([a, b, ...])`, `T.get(vec, i)`, `ones([rows, cols])`, `_.range`, `_.flatten`, `_.zipObject`, `_.fromPairs`, `_.includes`, `_.parseInt`, `_.uniq`, `_.merge`, `_.mean` (array average; bare `mean` is not defined — use `expectation(dist)` for distributions or `listMean(xs)` for arrays). Use `sum(arr)` for array summation. Arrays use `Array.isArray`, `Object.keys` works on plain objects.
 
-Display: there's no `viz`, `print`, `display`, etc. that affects the answer - those are browser-only. The answer is whatever your program binds to `ANSWER` (see the Answer format section).
+Display: `viz`, `print`, `display`, etc. are shimmed to no-ops in this environment — calling them is harmless but does nothing. The answer is whatever your program binds to `ANSWER` (see the Answer format section).

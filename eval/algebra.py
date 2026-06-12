@@ -536,12 +536,20 @@ def canonicalize(raw, spec: Spec):
             # This is the language-neutral "mapping" representation — natural in Python
             # (Pyro) and constructible in any language. Keys are JSON-parsed back to
             # labels; values must be numeric probabilities.
+            declared = set(spec.support)
             support_list = []
             probs_list = []
             for k, v in raw.items():
                 try:
                     label = json.loads(k)
                 except (json.JSONDecodeError, ValueError):
+                    label = k
+                # Disambiguate keys that parse as JSON literals ("null", "true",
+                # "1") when the problem's declared support says the label is the
+                # raw STRING: prefer the declared reading.
+                if (declared and label != k
+                        and _label_key(label) not in declared
+                        and _label_key(k) in declared):
                     label = k
                 support_list.append(label)
                 probs_list.append(v)

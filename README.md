@@ -5,11 +5,12 @@ statements with per-language ground-truth realizations, for evaluating LLMs on
 probabilistic programming.
 
 - **Dataset**: `data/problems/{probmods2,dippl,forestdb}.jsonl` — 115 problems,
-  each a `(given, model, query)` statement plus an authored `answer_spec`;
-  WebPPL realizations in `data/realizations/webppl.jsonl` (1:1, all
-  solver-verified by the re-derivation gate). Pyro and Stan columns are planned;
-  memo and pluck with the language creators (stub directories: `webppl/`,
-  `memo/`, `pluck/`).
+  each a `(given, model, query)` statement plus an authored `answer_spec`, with
+  two verified realization columns: WebPPL (`data/realizations/webppl.jsonl`,
+  solver-verified by the re-derivation gate) and Pyro
+  (`data/realizations/pyro.jsonl`, verified against the WebPPL ground truths by
+  the cross-language gate). Stan is planned; memo and pluck with the language
+  creators (stub directories: `webppl/`, `memo/`, `pluck/`).
 - **Contract**: `data/SCHEMA.md` — problem/realization records, the answer
   algebra (one comparator for all answer types and representations), measured
   tolerances, and the gate protocol. Design history: `data/REDESIGN.md`.

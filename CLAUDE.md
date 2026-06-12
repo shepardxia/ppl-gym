@@ -24,7 +24,7 @@ Two halves:
 
 - Always use **`uv`** for package management: `uv pip install ...`, `uv sync`. The repo has no `pyproject.toml`; deps are pinned in `.venv/`.
 - Always run scripts via **`.venv/bin/python`** — bare `python` may pick up conda. Tests / modules: `PYTHONPATH=. .venv/bin/python -m eval.<module>`.
-- Tests: `PYTHONPATH=. .venv/bin/python -m pytest tests/ -q` (131, fast; covers algebra, render, gate report mechanics, score smoke, status-vocabulary drift).
+- Tests: `PYTHONPATH=. .venv/bin/python -m pytest tests/ -q` (166, fast; covers algebra, render, executor_pyro, gate report mechanics, score smoke, status-vocabulary drift).
 - WebPPL itself is a system binary (`webppl` on `$PATH`, currently from miniconda). The executor shells out to it.
 
 ## Eval pipeline (run order)
@@ -94,7 +94,7 @@ npm run db:migrate:remote       # apply migrations to remote D1 (production!)
 ```
 
 - Build runs with **CWD = `web/`**. `src/lib/problems.ts` resolves `process.cwd() + '/..'` to find the dataset; do not change to `import.meta.url`-based resolution (vite bundles the file into `dist/_worker.js/chunks/` and the relative path breaks).
-- The site reads `data/problems/*.jsonl`, `data/realizations/webppl.jsonl`, and the two gate reports at build time. Status tones live in `src/lib/tones.ts`.
+- The site reads `data/problems/*.jsonl`, `data/realizations/{webppl,pyro}.jsonl`, and the gate reports at build time. Status tones live in `src/lib/tones.ts`.
 - The name-entry modal markup is inlined in `ProblemDetail.astro` (`#name-modal` ids consumed by `public/feedback.js`).
 - `dist/.assetsignore` (sourced from `public/.assetsignore`) excludes `_worker.js` and `_routes.json` from the static-asset upload — without it, `wrangler deploy` refuses to upload because it would expose server code.
 - D1 binding: `env.DB` (`ppl-gym-feedback`, id in `wrangler.toml`). Schema in `migrations/0001_init.sql`. R2 binding is commented out pending `wrangler r2 bucket create ppl-gym-backups`; backups will live in a separate `ppl-gym-backup` Worker, not this one.
