@@ -1,79 +1,30 @@
 ---
 import Layout from '@/layouts/Layout.astro';
-import SiteHeader from '@/components/SiteHeader.astro';
-import Flow from '@/components/Flow.astro';
-import { datasetStats, CORPUS_META } from '@/lib/problems';
+import { loadAllCollections } from '@/lib/atoms';
 
 export const prerender = true;
 
-const stats = await datasetStats();
+const collections = await loadAllCollections();
 ---
 
-<Layout title="ppl-gym — verified probabilistic-programming problems">
-  <div class="page-wrap">
-    <SiteHeader active="none" />
-
-    <main class="landing">
-      <section class="hero">
-        <h1>Probabilistic-programming problems with machine-verified ground truths.</h1>
-        <p class="hero-lead">
-          A benchmark for evaluating how well language models write probabilistic
-          programs: language-neutral problem statements, realized and
-          cross-checked in multiple PPLs.
-        </p>
-      </section>
-
-      <section class="stat-strip">
-        <div class="stat"><span class="stat-n">{stats.total}</span><span class="stat-k">problems</span></div>
-        <div class="stat"><span class="stat-n">{stats.byCorpus.length}</span><span class="stat-k">source corpora</span></div>
-        <div class="stat"><span class="stat-n">{stats.webpplVerified}/{stats.total}</span><span class="stat-k">WebPPL solver-verified</span></div>
-        <div class="stat"><span class="stat-n">{stats.pyroVerified}/{stats.total}</span><span class="stat-k">Pyro cross-verified</span></div>
-      </section>
-
-      <section class="landing-section">
-        <Flow steps={[
-          { t: 'textbook sources', s: 'probmods · dippl · forest' },
-          { t: 'problem statement', s: 'given / model / query' },
-          { t: 'realizations', s: 'WebPPL · Pyro' },
-          { t: 'two gates', s: 'solver re-derivation<br/>cross-language' },
-          { t: 'verified dataset', tone: 'good' },
-        ]} label="Statements pin the answer, never the program. Tolerances are measured from each problem's own noise — no hand-set thresholds. Full story: methodology." />
-        <p class="landing-more"><a href="/methodology/">Methodology →</a></p>
-      </section>
-
-      <section class="landing-section">
-        <div class="section-title">
-          <span class="section-title-num">01</span>
-          <span>browse the problems</span>
-        </div>
-        <div class="corpus-cards">
-          {stats.byCorpus.map(({ corpus, count }) => {
-            const meta = CORPUS_META[corpus];
-            return (
-              <a class="corpus-card" href={`/problems/${corpus}/`}>
-                <div class="corpus-card-hd">
-                  <span class="corpus-card-name">{meta.label}</span>
-                  <span class="corpus-card-count">{count} problems</span>
-                </div>
-                <p class="corpus-card-desc">{meta.description}</p>
-                <span class="corpus-card-src">{meta.sourceName}</span>
-              </a>
-            );
-          })}
-        </div>
-      </section>
-
-      <section class="landing-section">
-        <div class="section-title">
-          <span class="section-title-num">02</span>
-          <span>for reviewers</span>
-        </div>
-        <p class="landing-text">
-          Every problem page shows the statement, both realizations, and the full
-          verification evidence — and takes feedback directly.
-          <a href="/reviewing/">Reviewing guide →</a>
-        </p>
-      </section>
-    </main>
+<Layout title="ppl-gym — atom browser">
+  <div class="home">
+    <h1>ppl-gym</h1>
+    <p class="tagline">
+      A benchmark of self-contained WebPPL exercises for evaluating LLMs on probabilistic programming.
+      Pick a collection to browse, inspect runs, and leave feedback.
+    </p>
+    <div class="collection-grid">
+      {collections.map((c) => (
+        <a class="collection-card" href={`/c/${c.collection.slug}`}>
+          <h3>{c.collection.label}</h3>
+          <div class="cdesc">{c.collection.description ?? c.collection.jsonlPath}</div>
+          <div class="cmeta">
+            <b>{c.atoms.length}</b> atoms · {Object.keys(c.runs).length} runs
+            {c.primary && (<Fragment> · primary {c.primary.id}</Fragment>)}
+          </div>
+        </a>
+      ))}
+    </div>
   </div>
 </Layout>

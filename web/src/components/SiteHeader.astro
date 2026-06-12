@@ -7,7 +7,7 @@ interface Props {
 const { active } = Astro.props;
 const path = Astro.url.pathname.replace(/\/$/, '');
 const NAV = [
-  { href: '/problems', label: 'Problems' },
+  { href: '/', label: 'Browse' },
   { href: '/methodology', label: 'Methodology' },
   { href: '/reviewing', label: 'Reviewing' },
   { href: '/updates', label: 'Updates' },
@@ -25,7 +25,7 @@ function isActive(href: string): boolean {
   </a>
   <nav class="site-nav">
     {NAV.map((n) => (
-      <a href={`${n.href}/`} class={isActive(n.href) ? 'is-active' : ''}>{n.label}</a>
+      <a href={n.href === '/' ? '/' : `${n.href}/`} class={isActive(n.href) ? 'is-active' : ''}>{n.label}</a>
     ))}
     <a href="https://github.com/shepardxia/ppl-gym" class="site-nav-ext" target="_blank" rel="noopener">GitHub ↗</a>
   </nav>

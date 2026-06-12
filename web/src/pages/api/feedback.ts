@@ -3,7 +3,7 @@ import type { APIRoute } from 'astro';
 type Vote = 'up' | 'down' | 'neutral';
 
 interface FeedbackBody {
-  problem_id: string;
+  atom_id: string;
   collection: string;
   dataset_version: string;
   rater_id: string;
@@ -23,7 +23,7 @@ function bad(msg: string, status = 400) {
 
 type FieldSpec = { key: keyof FeedbackBody; max: number; required?: boolean };
 const FIELD_SPECS: FieldSpec[] = [
-  { key: 'problem_id', max: 256 },
+  { key: 'atom_id', max: 256 },
   { key: 'collection', max: 64 },
   { key: 'dataset_version', max: 64 },
   { key: 'rater_id', max: 64 },
@@ -59,6 +59,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const db = locals.runtime.env.DB;
   if (!db) return bad('database not configured', 500);
 
+  // Clients post `atom_id` (the original widget contract); the D1 column was
+  // renamed to problem_id in migration 0002. Same id space either way.
   await db
     .prepare(
       `INSERT INTO feedback
@@ -66,7 +68,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, 'private')`,
     )
     .bind(
-      body.problem_id, body.collection, body.dataset_version,
+      body.atom_id, body.collection, body.dataset_version,
       body.rater_id, body.rater_name, body.vote, body.comment ?? '',
     )
     .run();

@@ -1,5 +1,5 @@
-// Feedback client. State lives in localStorage (rater_id, name, per-problem vote).
-// API is POST /api/feedback. A single (rater, problem) ends up with one canonical
+// Feedback client. State lives in localStorage (rater_id, name, per-atom vote).
+// API is POST /api/feedback. A single (rater, atom) ends up with one canonical
 // row because comment/vote submissions both carry the current state forward.
 
 const LS_KEY_ID = 'pplgym.rater_id';
@@ -19,10 +19,10 @@ function ensureRaterId() {
 const getName = () => localStorage.getItem(LS_KEY_NAME) || '';
 const setName = (n) => localStorage.setItem(LS_KEY_NAME, n);
 
-const getStoredVote = (problemId) => localStorage.getItem(LS_VOTE_PREFIX + problemId) || '';
-function setStoredVote(problemId, vote) {
-  if (vote === 'up' || vote === 'down') localStorage.setItem(LS_VOTE_PREFIX + problemId, vote);
-  else localStorage.removeItem(LS_VOTE_PREFIX + problemId);
+const getStoredVote = (atomId) => localStorage.getItem(LS_VOTE_PREFIX + atomId) || '';
+function setStoredVote(atomId, vote) {
+  if (vote === 'up' || vote === 'down') localStorage.setItem(LS_VOTE_PREFIX + atomId, vote);
+  else localStorage.removeItem(LS_VOTE_PREFIX + atomId);
 }
 
 function promptForName(initial = '') {
@@ -75,7 +75,7 @@ async function postFeedback(body) {
 }
 
 const widgetState = (node) => ({
-  problemId: node.dataset.fbProblem,
+  atomId: node.dataset.fbAtom,
   collection: node.dataset.fbCollection,
   datasetVersion: node.dataset.fbDatasetVersion,
 });
@@ -106,14 +106,14 @@ async function submit(node, vote, comment) {
   const name = await ensureName();
   if (!name) return null;
   updateNameUI(node);
-  const { problemId, collection, datasetVersion } = widgetState(node);
+  const { atomId, collection, datasetVersion } = widgetState(node);
   setStatus(node, 'sending…');
   try {
     await postFeedback({
-      problem_id: problemId, collection, dataset_version: datasetVersion,
+      atom_id: atomId, collection, dataset_version: datasetVersion,
       rater_id: ensureRaterId(), rater_name: name, vote, comment,
     });
-    return { problemId, vote };
+    return { atomId, vote };
   } catch (err) {
     setStatus(node, 'error: ' + err.message, 'err');
     return null;
@@ -121,14 +121,14 @@ async function submit(node, vote, comment) {
 }
 
 async function handleVote(node, clickedVote) {
-  const { problemId } = widgetState(node);
-  const prior = getStoredVote(problemId);
+  const { atomId } = widgetState(node);
+  const prior = getStoredVote(atomId);
   const vote = (prior === clickedVote) ? 'neutral' : clickedVote;
   const ta = node.querySelector('textarea');
   const comment = (ta?.value ?? '').trim();
   const result = await submit(node, vote, comment);
   if (!result) return;
-  setStoredVote(problemId, vote);
+  setStoredVote(atomId, vote);
   setVoteHighlight(node, vote);
   setStatus(node, 'recorded ' + VOTE_GLYPH[vote] + (comment ? ' + comment' : ''), 'ok');
 }
@@ -140,8 +140,8 @@ async function handleComment(node) {
     setStatus(node, 'comment is empty', 'err');
     return;
   }
-  const { problemId } = widgetState(node);
-  const vote = getStoredVote(problemId) || 'neutral';
+  const { atomId } = widgetState(node);
+  const vote = getStoredVote(atomId) || 'neutral';
   const result = await submit(node, vote, comment);
   if (!result) return;
   ta.value = '';
@@ -173,6 +173,6 @@ document.addEventListener('click', (e) => {
 
 document.querySelectorAll('.fb').forEach((node) => {
   updateNameUI(node);
-  const v = getStoredVote(node.dataset.fbProblem);
+  const v = getStoredVote(node.dataset.fbAtom);
   if (v) setVoteHighlight(node, v);
 });
