@@ -1,92 +1,204 @@
 ---
 import Layout from '@/layouts/Layout.astro';
-import { loadAllProblemsGrouped, datasetStats, CORPORA, CORPUS_META } from '@/lib/problems';
+import { loadAllProblemsGrouped, loadGtAnswers, datasetStats, canonicalToRenderOutput, CORPORA, CORPUS_META, problemLeaf } from '@/lib/problems';
 import { loadAllCollections } from '@/lib/atoms';
+import { renderChart, isDistLike } from '@/lib/render';
+import type { RenderOutput } from '@/lib/types';
 
 export const prerender = true;
 
 const grouped = await loadAllProblemsGrouped();
 const stats = await datasetStats();
+const gtAnswers = await loadGtAnswers();
 const legacy = await loadAllCollections();
+
+// ── Teaser: one real problem, shown as the product ──
+const TEASER_ID = 'probmods2-conditioning/ex6.c';
+const teaser = (grouped.probmods2 ?? []).find((r) => r.problem.problem_id === TEASER_ID)!;
+const tAns = gtAnswers.get(TEASER_ID);
+const tA = canonicalToRenderOutput(tAns?.webppl?.answer) as RenderOutput;
+const tB = canonicalToRenderOutput(tAns?.pyro?.answer) as RenderOutput;
+const teaserChart = (isDistLike(tA) || isDistLike(tB))
+  ? renderChart({ a: isDistLike(tA) ? tA : null, b: isDistLike(tB) ? tB : null, labelA: 'webppl', labelB: 'pyro' })
+  : '';
 
 function verifiedCount(c: (typeof CORPORA)[number]): number {
   return (grouped[c] ?? []).filter((r) => r.gateB?.status === 'accept' && r.crosscheck?.status === 'pass').length;
 }
 ---
 
-<Layout title="ppl-gym — problem browser">
-  <div class="home">
-    <h1>ppl-gym</h1>
-    <p class="tagline">
-      Probabilistic-programming problems with machine-verified ground truths in
-      WebPPL and Pyro — {stats.total} problems, {stats.webpplVerified}/{stats.total} solver-verified,
-      {stats.pyroVerified}/{stats.total} cross-language-verified.
-      Pick a corpus to browse, inspect verification evidence, and leave feedback.
-    </p>
+<Layout title="ppl-gym — verified probabilistic-programming problems">
+  <div class="land">
+    <header class="land-top">
+      <div class="brand">
+        <span class="brand-mark"><span>{'{'}</span><span class="brand-mark-tilde">~</span><span>{'}'}</span></span>
+        <span class="brand-name">ppl<span class="brand-name-dim">·</span>gym</span>
+      </div>
+      <nav class="land-nav">
+        <a href="/problems/probmods2/">problems</a>
+        <a href="/methodology/">methodology</a>
+        <a href="/updates/">updates</a>
+        <a href="/reviewing/">reviewing</a>
+        <a href="/results/">results</a>
+        <a href="https://github.com/shepardxia/ppl-gym" class="land-nav-ext">GitHub ↗</a>
+      </nav>
+    </header>
 
-    <div class="collection-grid">
+    <section class="land-hero">
+      <div class="land-pitch">
+        <h1>Probabilistic-programming problems, verified to be solvable as stated.</h1>
+        <p>
+          Language-neutral statements with ground truths in WebPPL and Pyro —
+          every problem re-derived by independent solvers and cross-checked
+          between languages, within tolerances measured from its own noise.
+        </p>
+        <div class="land-cta">
+          <a class="btn-primary" href="/problems/probmods2/">browse problems</a>
+          <a class="btn-secondary" href="/methodology/">methodology</a>
+        </div>
+        <div class="land-stats">
+          <span class="topbar-stat"><span class="topbar-stat-key">problems</span><span class="topbar-stat-val">{stats.total}</span></span>
+          <span class="topbar-stat"><span class="topbar-stat-key">corpora</span><span class="topbar-stat-val">{stats.byCorpus.length}</span></span>
+          <span class="topbar-stat"><span class="topbar-stat-key">solver-verified</span><span class="topbar-stat-val">{stats.webpplVerified}/{stats.total}</span></span>
+          <span class="topbar-stat"><span class="topbar-stat-key">cross-verified</span><span class="topbar-stat-val">{stats.pyroVerified}/{stats.total}</span></span>
+        </div>
+      </div>
+
+      <a class="land-teaser" href={`/problems/${teaser.corpus}/#${encodeURIComponent(TEASER_ID)}`}>
+        <div class="land-teaser-hd">
+          <span class="land-teaser-lbl">from the dataset</span>
+          <span class="land-teaser-id">{TEASER_ID}</span>
+        </div>
+        <p class="land-teaser-stmt">
+          “{teaser.problem.statement.given}” — {teaser.problem.statement.query}
+        </p>
+        <div class="land-teaser-chips">
+          <span class="bucket bucket-great bucket-xs"><span class="bucket-glyph">✓</span><span class="bucket-label">solver: accept</span></span>
+          <span class="bucket bucket-great bucket-xs"><span class="bucket-glyph">✓</span><span class="bucket-label">pyro: pass</span></span>
+        </div>
+        <div class="land-teaser-chart" set:html={teaserChart} />
+        <span class="land-teaser-open">open in the browser →</span>
+      </a>
+    </section>
+
+    <section class="land-corpora">
+      <div class="section-title">
+        <span class="section-title-num">⌂</span>
+        <span>corpora</span>
+      </div>
       {CORPORA.map((c) => {
         const meta = CORPUS_META[c];
-        const records = grouped[c] ?? [];
+        const n = (grouped[c] ?? []).length;
         return (
-          <a class="collection-card" href={`/problems/${c}/`}>
-            <h3>{meta.label}</h3>
-            <div class="cdesc">{meta.description}</div>
-            <div class="cmeta">
-              <b>{records.length}</b> problems · {verifiedCount(c)} fully verified · {meta.sourceName}
-            </div>
+          <a class="land-corpus" href={`/problems/${c}/`}>
+            <span class="land-corpus-name">{meta.label}</span>
+            <span class="land-corpus-desc">{meta.description}</span>
+            <span class="land-corpus-meta">
+              <b>{n}</b> problems · {verifiedCount(c)} verified
+            </span>
+            <span class="land-corpus-arrow">→</span>
           </a>
         );
       })}
-    </div>
+    </section>
 
-    <h2 class="home-sub">project</h2>
-    <div class="collection-grid">
-      <a class="collection-card" href="/methodology/">
-        <h3>methodology</h3>
-        <div class="cdesc">How problems are authored and verified: the statement contract, measured tolerances, and the two gates.</div>
-      </a>
-      <a class="collection-card" href="/updates/">
-        <h3>updates</h3>
-        <div class="cdesc">Dataset and pipeline changes, newest first.</div>
-      </a>
-      <a class="collection-card" href="/reviewing/">
-        <h3>reviewing</h3>
-        <div class="cdesc">What to look at on a problem page, and how feedback is triaged.</div>
-      </a>
-      <a class="collection-card" href="/results/">
-        <h3>results</h3>
-        <div class="cdesc">Model baselines under the current pipeline (pending).</div>
-      </a>
-    </div>
-
-    <h2 class="home-sub">legacy archives</h2>
-    <p class="home-legacy-note">
-      The pre-redesign atom collections with their original LM eval runs — kept browsable for reference.
-    </p>
-    <div class="collection-grid">
-      {legacy.map((c) => (
-        <a class="collection-card collection-card-legacy" href={`/c/${c.collection.slug}`}>
-          <h3>{c.collection.label}</h3>
-          <div class="cmeta">
-            <b>{c.atoms.length}</b> atoms · {Object.keys(c.runs).length} runs
-          </div>
-        </a>
-      ))}
-    </div>
+    <footer class="land-foot">
+      <span class="land-foot-grp">
+        <span class="land-foot-key">project</span>
+        <a href="/methodology/">methodology</a> ·
+        <a href="/updates/">updates</a> ·
+        <a href="/reviewing/">reviewing</a> ·
+        <a href="/results/">results</a>
+      </span>
+      <span class="land-foot-grp">
+        <span class="land-foot-key">legacy archives</span>
+        {legacy.map((c, i) => (
+          <Fragment>{i > 0 && ' · '}<a href={`/c/${c.collection.slug}`}>{c.collection.label}</a></Fragment>
+        ))}
+      </span>
+    </footer>
   </div>
 </Layout>
 
 <style>
-  .home-sub {
-    font: 12.5px var(--font-mono);
-    text-transform: uppercase; letter-spacing: .08em;
-    color: var(--fg-dim);
-    margin: 36px 0 12px;
-    padding-top: 18px;
-    border-top: 1px solid var(--border);
+  .land { max-width: 1180px; margin: 0 auto; padding: 26px 32px 64px; }
+
+  .land-top {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    padding-bottom: 14px; margin-bottom: 40px;
+    border-bottom: 1px solid var(--border);
   }
-  .home-legacy-note { font-size: 14px; color: var(--fg-dim); margin: 0 0 12px; }
-  .collection-card-legacy { opacity: .75; }
-  .collection-card-legacy:hover { opacity: 1; }
+  .land-nav { display: flex; gap: 18px; font: 13px var(--font-mono); }
+  .land-nav a { color: var(--fg-dim); text-decoration: none; }
+  .land-nav a:hover { color: var(--accent); }
+  .land-nav-ext { color: var(--fg-faint) !important; }
+
+  .land-hero {
+    display: grid; grid-template-columns: minmax(380px, 1.1fr) minmax(320px, 1fr);
+    gap: 48px; align-items: start;
+    margin-bottom: 48px;
+  }
+  @media (max-width: 900px) { .land-hero { grid-template-columns: 1fr; } }
+
+  .land-pitch h1 {
+    font: 600 34px/1.2 var(--font-prose);
+    letter-spacing: -.015em;
+    color: var(--fg);
+    margin: 8px 0 14px;
+  }
+  .land-pitch p {
+    font: 16.5px/1.6 var(--font-prose);
+    color: var(--fg-mid);
+    margin: 0 0 22px;
+  }
+  .land-cta { display: flex; gap: 12px; margin-bottom: 26px; }
+  .land-cta a { text-decoration: none; }
+  .land-stats { display: flex; gap: 18px; flex-wrap: wrap; font: 12.5px var(--font-mono); }
+
+  .land-teaser {
+    display: block;
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    background: var(--bg-elev);
+    padding: 16px 18px;
+    text-decoration: none;
+    transition: border-color .12s ease;
+  }
+  .land-teaser:hover { border-color: var(--accent); }
+  .land-teaser-hd { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin-bottom: 8px; }
+  .land-teaser-lbl { font: 11px var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--fg-faint); }
+  .land-teaser-id { font: 12px var(--font-mono); color: var(--fg-dim); }
+  .land-teaser-stmt { font: 14px/1.55 var(--font-prose); color: var(--fg-mid); margin: 0 0 10px; }
+  .land-teaser-chips { display: flex; gap: 8px; margin-bottom: 10px; }
+  .land-teaser-chart { pointer-events: none; }
+  .land-teaser-open { display: inline-block; margin-top: 10px; font: 12.5px var(--font-mono); color: var(--accent); }
+
+  .land-corpora { margin-bottom: 44px; }
+  .land-corpus {
+    display: grid;
+    grid-template-columns: 150px 1fr auto 24px;
+    gap: 18px; align-items: baseline;
+    padding: 13px 6px;
+    border-bottom: 1px solid var(--border);
+    text-decoration: none;
+  }
+  .land-corpus:first-of-type { border-top: 1px solid var(--border); }
+  .land-corpus:hover { background: var(--hover); }
+  .land-corpus-name { font: 600 17px var(--font-prose); color: var(--fg); }
+  .land-corpus-desc { font: 14px/1.5 var(--font-prose); color: var(--fg-mid); }
+  .land-corpus-meta { font: 12.5px var(--font-mono); color: var(--fg-dim); white-space: nowrap; }
+  .land-corpus-arrow { color: var(--fg-faint); }
+  .land-corpus:hover .land-corpus-arrow { color: var(--accent); }
+  @media (max-width: 720px) { .land-corpus { grid-template-columns: 1fr auto; } .land-corpus-desc { display: none; } }
+
+  .land-foot {
+    display: flex; flex-direction: column; gap: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font: 12.5px var(--font-mono); color: var(--fg-dim);
+  }
+  .land-foot a { color: var(--fg-dim); }
+  .land-foot a:hover { color: var(--accent); }
+  .land-foot-key { color: var(--fg-faint); text-transform: uppercase; letter-spacing: .07em; margin-right: 8px; }
 </style>
