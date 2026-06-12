@@ -1,0 +1,9 @@
+---
+import DocsLayout from '@/layouts/DocsLayout.astro';
+import { Content } from '@/docs/dataset.md';
+
+export const prerender = true;
+---
+<DocsLayout title="Dataset">
+  <Content />
+</DocsLayout>

@@ -1,0 +1,9 @@
+---
+import DocsLayout from '@/layouts/DocsLayout.astro';
+import { Content } from '@/docs/about.md';
+
+export const prerender = true;
+---
+<DocsLayout title="About">
+  <Content />
+</DocsLayout>

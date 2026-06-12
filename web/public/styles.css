@@ -956,3 +956,52 @@ button { font-family: inherit; }
   .context-row { grid-template-columns: 1fr; }
   .workspace { grid-template-columns: 240px 1fr; }
 }
+
+/* ── Docs pages (About / Methodology / ...) ───────────────────────────── */
+.docs {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 48px 32px;
+}
+.docs-header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  margin-bottom: 36px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.docs-header .brand { text-decoration: none; }
+.docs-nav, .home-nav {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font: 11px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.home-nav { margin-top: 12px; }
+.docs-nav a, .home-nav a { color: var(--fg-dim); text-decoration: none; }
+.docs-nav a:hover, .home-nav a:hover { color: var(--accent); }
+.docs-nav a.is-active { color: var(--fg); border-bottom: 1px solid var(--border-strong); padding-bottom: 2px; }
+.docs-prose { font: 15px/1.65 var(--font-prose); color: var(--fg-mid); }
+.docs-prose h1 { font: 24px var(--font-prose); letter-spacing: -.01em; color: var(--fg); margin: 0 0 18px; }
+.docs-prose h2 {
+  font: 11px var(--font-mono); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--fg); margin: 30px 0 10px;
+  padding-top: 14px; border-top: 1px solid var(--border);
+}
+.docs-prose h3 { font: 14px var(--font-prose); font-weight: 600; color: var(--fg); margin: 20px 0 6px; }
+.docs-prose strong { color: var(--fg); }
+.docs-prose a { color: var(--accent); }
+.docs-prose code {
+  font: 12.5px var(--font-mono);
+  background: var(--code-bg); color: var(--code-fg);
+  padding: 1px 5px; border-radius: 3px;
+}
+.docs-prose pre {
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 16px; overflow-x: auto;
+}
+.docs-prose pre code { background: none; padding: 0; }
+.docs-prose table { border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+.docs-prose th { font: 11px var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--fg-dim); }
+.docs-prose th, .docs-prose td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
+.docs-prose blockquote { border-left: 3px solid var(--border-strong); margin: 12px 0; padding: 2px 0 2px 14px; color: var(--fg-dim); }
