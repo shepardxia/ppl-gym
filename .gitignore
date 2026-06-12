@@ -18,3 +18,5 @@ data/sources/
 
 # scoring backups (rotated when scoring is re-run)
 data/eval_runs/*/*.pre-output-bak
+node_modules/
+.astro/
