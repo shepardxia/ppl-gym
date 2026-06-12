@@ -1015,3 +1015,22 @@ def test_mapping_key_prefers_declared_string_over_json_literal():
                        "support": ["null", "every-not"]})
     c = canonicalize({"null": 0.3, "every-not": 0.7}, spec)
     assert set(c.support) == {"null", "every-not"}
+
+
+def test_answer_to_dict_round_trips():
+    from eval.algebra import answer_to_dict
+    cases = [
+        ({"kind": "dist", "domain": "bool"},
+         {"kind": "dist_enum", "support": [True, False], "probs": [0.6, 0.4]}),
+        ({"kind": "dist", "domain": "real"},
+         {"kind": "dist_param", "family": "gaussian", "params": {"mu": 0.0, "sigma": 1.0}}),
+        ({"kind": "dist", "domain": "real"},
+         {"kind": "cloud", "samples": [0.1, 0.5, 0.9, 0.5]}),
+        ({"kind": "value", "domain": "real"}, 1.5),
+        ({"kind": "record", "fields": {"p": {"kind": "value", "domain": "real"}}},
+         {"p": 1.5}),
+    ]
+    for spec_d, raw in cases:
+        spec = parse_spec(spec_d)
+        canon = canonicalize(raw, spec)
+        assert canonicalize(answer_to_dict(canon), spec) == canon

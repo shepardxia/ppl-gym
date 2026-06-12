@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Two halves:
 
 1. A **Python pipeline** (`eval/`, `scripts/`) for authoring/gating problems, generating LLM solutions, executing WebPPL, and judging answers under one comparator.
-2. A **web app** (`web/`) — Astro + Cloudflare Worker — where collaborators review problems (`/p/<slug>/`) and leave feedback into D1.
+2. A **web app** (`web/`) — Astro + Cloudflare Worker — where collaborators review problems in a two-pane browser (`/problems/<corpus>/`) and leave feedback into D1.
 
 ## The contract (read first)
 
@@ -18,7 +18,7 @@ Two halves:
 - `eval/algebra.py` is the only comparator: answer = Value/Dist/Record over domains bool/finite/int/real/realvec; representations (exact/enumerated/parametric/cloud) orthogonal; tolerance measured (GT noise floor + candidate split-half self-noise), never authored. Entry points: `judge()` (candidate vs GTs), `agreement()` (candidate vs candidate). Finite specs may declare `support` — the label *space* (incl. zero-prob labels; never the realized support, that leaks the answer); the renderer enumerates it and the canonicalizer rejects out-of-space mass as malformed.
 - Gate (`eval/gate.py`): `phaseA` (multi-seed GT floors) / `solve` (render + submit solver batch; `--model` to escalate; `--dry-run` writes a `.dry.json` sidecar) / `judge` (execute solver code, classify accept/gt_suspect/underdetermined/solver_failure, stamp gate_model/timeout/n_solvers). Both report writers merge by problem_id — partial re-runs never clobber other rows. Campaign result (report v2, re-gated under the collapsed pipeline): 115/115 solver-verified, uniformly stamped, 1 opus-gated row — history in `data/problems/_gate_triage.md`. Retired problems: `data/problems/_retired.jsonl`; authoring rules incl. hard bans: `data/problems/_AUTHORING_BRIEF.md`.
 - `data/pyro_v3/` is the dead pre-P4 Pyro attempt (plain-Python GTs, wire-format prompts) — archival only; the live column is `data/realizations/pyro.jsonl`. A realization must express its model via the language's own machinery (e.g. `pyro.sample`/`pyro.infer`) — audit this mechanically; agents WILL hand back plain-Python lookalikes whose numbers pass.
-- Legacy atom JSONLs (`data/atomized_v2.jsonl`, `data/curated_v3/*`, `data/eval_runs/*`) are archives; the eval pipeline and web app no longer read them (only the legacy curation scripts below still target the atom format).
+- Legacy atom JSONLs (`data/atomized_v2.jsonl`, `data/curated_v3/*`, `data/eval_runs/*`) are archives; the eval pipeline no longer reads them. The web app's legacy `/c/` browser and the legacy curation scripts still do.
 
 ## Python toolchain
 
@@ -57,6 +57,10 @@ PYTHONPATH=. .venv/bin/python -m eval.gate judge --manifest <path> [--report <pa
 
 # Cross-language consistency (target column vs reference GT, symmetric tolerances)
 PYTHONPATH=. .venv/bin/python -m eval.gate crosscheck --language pyro [--ids ...]
+
+# Canonical GT answers (feeds the web overlay charts) — rerun after realization changes
+PYTHONPATH=. .venv/bin/python -m eval.gate answers --language webppl
+PYTHONPATH=. .venv/bin/python -m eval.gate answers --language pyro
 ```
 
 `eval.config` defaults: `seed=42`, `n_mc=200`, `mc_workers=8`, `timeout=60`. Workers multiply across levels (problem-level × per-seed); both score and gate clamp so WebPPL process count stays bounded.
@@ -77,7 +81,15 @@ WebPPL packages in `eval/deps/` are loaded via `--require` for every run:
 
 ## Web app (`web/`)
 
-Astro 5 + `@astrojs/cloudflare` adapter. Static prerendered problem pages (`/p/<slug>/`, slug = problem_id with `/`→`__`); a single SSR endpoint `POST /api/feedback` writes to D1.
+Astro 5 + `@astrojs/cloudflare` adapter, all pages prerendered. Routes: `/` landing (framing sentences, IR figure, corpora, updates rendered from `web/src/docs/updates.md`); `/problems/<corpus>/` the problem browser — a two-pane explorer driven unchanged by `public/browse.js` via its markup contract (`.atom-row`, `data-aid`, `#ppl-meta`, `[data-feedback]`); `/p/<slug>` redirects into the browser; `/c/<collection>` the legacy atom browser; `/methodology`. One SSR endpoint `POST /api/feedback` writes to D1.
+
+**Design philosophy (hard-won; do not regress):**
+- The browser is the product — an evidence instrument in the original academic design system (parchment tokens, mono labels, bucket glyphs, `browse.js` interactions). Show data; never replace the designed browser with plain tables.
+- The landing is the name, the settled framing sentences, the one IR figure, corpora rows, updates, GitHub link. No brochure copy, no slogan headlines, no CTA buttons, no card directories.
+- The site carries the ideas and the data; the repo carries the machinery. No pages that translate the pipeline back into English (a Reviewing and a Results page died for this).
+- Figures must carry meaning spatially (the IR region holds the stored GT; per-language answers land on the same bars). Boxes-with-arrows pipeline charts are banned.
+- Prose: plain declarative sentences; no "X, not Y" / "X — never Y" constructions. The landing framing sentences are settled wording — change only with the user.
+- Site changes are design decisions: discuss before shipping; every push to main deploys.
 
 **Pushes to `main` auto-deploy** via Cloudflare's Git integration (no GitHub Actions in the repo — it's configured in the Cloudflare dashboard). Treat every push as a production deploy; D1 migrations must be applied remotely (`npm run db:migrate:remote`) before or with any push whose worker code needs the new schema.
 
@@ -94,8 +106,9 @@ npm run db:migrate:remote       # apply migrations to remote D1 (production!)
 ```
 
 - Build runs with **CWD = `web/`**. `src/lib/problems.ts` resolves `process.cwd() + '/..'` to find the dataset; do not change to `import.meta.url`-based resolution (vite bundles the file into `dist/_worker.js/chunks/` and the relative path breaks).
-- The site reads `data/problems/*.jsonl`, `data/realizations/{webppl,pyro}.jsonl`, and the gate reports at build time. Status tones live in `src/lib/tones.ts`.
-- The name-entry modal markup is inlined in `ProblemDetail.astro` (`#name-modal` ids consumed by `public/feedback.js`).
+- Build-time inputs: `data/problems/*.jsonl`, `data/realizations/{webppl,pyro}.jsonl`, the gate reports, `data/problems/_gt_answers.jsonl` (overlay-chart data; regenerate with `eval.gate answers`), and the legacy atom JSONLs (for `/c/`). Status tones live in `src/lib/tones.ts`.
+- The name-entry modal markup is inlined in each browser page (`#name-modal` ids consumed by `public/browse.js`).
+- Feedback API seam: clients post an `atom_id` field (the original widget contract); the API writes it to the D1 `problem_id` column (renamed in migration 0002). Same id values either way.
 - `dist/.assetsignore` (sourced from `public/.assetsignore`) excludes `_worker.js` and `_routes.json` from the static-asset upload — without it, `wrangler deploy` refuses to upload because it would expose server code.
 - D1 binding: `env.DB` (`ppl-gym-feedback`, id in `wrangler.toml`). Schema in `migrations/0001_init.sql`. R2 binding is commented out pending `wrangler r2 bucket create ppl-gym-backups`; backups will live in a separate `ppl-gym-backup` Worker, not this one.
 - **Local D1 state gotcha**: `wrangler dev --persist-to <path>` and `wrangler d1 migrations apply --local` must use the SAME persist path or they read different SQLite files (silent "no such table" at POST time). Default is `.wrangler/state/v3`; pass `--persist-to` to both or neither.

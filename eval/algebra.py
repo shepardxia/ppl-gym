@@ -480,6 +480,8 @@ def canonicalize(raw, spec: Spec):
     """
     if spec.kind == "record":
         fmap = spec.field_map()
+        if isinstance(raw, dict) and _kind_tag(raw) == "record" and "fields" in raw:
+            raw = raw["fields"]
         if isinstance(raw, list):
             # draws protocol over a record: only valid when at least one leaf
             # field carries protocol="draws"; otherwise a list is structurally wrong.
@@ -557,6 +559,8 @@ def canonicalize(raw, spec: Spec):
                 {"support": support_list, "probs": probs_list},
                 spec.domain, spec.labels, spec.support,
             )
+        if isinstance(raw, dict) and _kind_tag(raw) == "cloud":
+            raw = raw.get("samples")
         if isinstance(raw, list):
             if not raw:
                 raise AlgebraError("empty sample cloud")
@@ -577,6 +581,8 @@ def canonicalize(raw, spec: Spec):
     # value
     if isinstance(raw, dict) and _kind_tag(raw) == "tensor":
         raw = raw.get("data")
+    if isinstance(raw, dict) and _kind_tag(raw) == "exact":
+        raw = raw.get("value")
     v = _norm_atom(raw, spec.domain)
     if spec.support:
         k = _label_key(v)
@@ -960,6 +966,32 @@ def verdict(cand, gts: list, spec: Spec, margin: float = 2.0) -> dict:
             "fields": fields,
         }
     return _leaf_verdict(cand, gts, spec, margin)
+
+
+def answer_to_dict(canon, *, max_samples: int | None = None) -> dict:
+    """Canonical representation → native wire dict (inverse of canonicalize).
+
+    Round-trips: canonicalize(answer_to_dict(c), spec) reproduces c (Cloud
+    modulo max_samples truncation, which is presentation policy for exports).
+    """
+    if isinstance(canon, EnumDist):
+        return {"kind": "dist_enum", "support": list(canon.support),
+                "probs": list(canon.probs)}
+    if isinstance(canon, ParamDist):
+        return {"kind": "dist_param", "family": canon.family,
+                "params": dict(canon.params)}
+    if isinstance(canon, Cloud):
+        samples = list(canon.samples)
+        if max_samples is not None:
+            samples = samples[:max_samples]
+        return {"kind": "cloud", "samples": samples}
+    if isinstance(canon, Rec):
+        return {"kind": "record",
+                "fields": {n: answer_to_dict(v, max_samples=max_samples)
+                           for n, v in canon.fields}}
+    if isinstance(canon, Exact):
+        return {"kind": "exact", "value": canon.value}
+    raise AlgebraError(f"not a canonical answer: {type(canon).__name__}")
 
 
 def status_of(v: dict) -> str:

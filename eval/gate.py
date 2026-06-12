@@ -29,6 +29,7 @@ from anthropic import Anthropic
 
 from eval.algebra import (
     AlgebraError,
+    answer_to_dict,
     Spec,
     _has_draws_field,
     agreement,
@@ -785,6 +786,62 @@ def _print_solver_summary(reports: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Canonical GT answer export (feeds the web browser's overlay charts)
+# ---------------------------------------------------------------------------
+
+_GT_ANSWERS = Path("data/problems/_gt_answers.jsonl")
+_ANSWER_MAX_SAMPLES = 500
+
+
+def cmd_answers(args) -> None:
+    """Collect one canonical GT answer per (problem, language) and merge-write
+    data/problems/_gt_answers.jsonl (keyed by problem_id + language)."""
+    executor = executor_for(args.language)
+    id_set = set(args.ids) if args.ids else None
+    problems, reals = load_corpus(id_set, language=args.language)
+    if not problems:
+        print("No matching problems found.")
+        return
+    real_by_id = {r["problem_id"]: r for r in reals}
+
+    print(f"[answers] {len(problems)} problem(s), language={args.language}")
+    parallel = min(4, max(1, len(problems)))
+    per_problem_workers = max(1, args.workers // parallel)
+
+    def _one(prob: dict) -> dict:
+        pid = prob["problem_id"]
+        try:
+            spec = parse_spec(prob["answer_spec"])
+            canon = execute_candidate_answer(
+                real_by_id[pid]["code"], spec,
+                base_seed=args.seed, n_draws=args.n_draws,
+                timeout=args.timeout, workers=per_problem_workers,
+                executor=executor,
+            )
+            return {"problem_id": pid, "language": args.language,
+                    "answer": answer_to_dict(canon, max_samples=_ANSWER_MAX_SAMPLES)}
+        except (RuntimeError, AlgebraError) as exc:
+            return {"problem_id": pid, "language": args.language,
+                    "error": str(exc)[:200]}
+
+    rows = _map_problems(
+        problems, _one, parallel=parallel,
+        line=lambda r: f"{r['problem_id']} ... {'error: ' + r['error'][:60] if 'error' in r else 'ok'}",
+    )
+
+    out = Path(args.report) if args.report else _GT_ANSWERS
+    merged: dict[tuple, dict] = {}
+    if out.exists():
+        for row in load_jsonl(out):
+            merged[(row["problem_id"], row["language"])] = row
+    for r in rows:
+        merged[(r["problem_id"], r["language"])] = r
+    write_jsonl(out, sorted(merged.values(), key=lambda r: (r["problem_id"], r["language"])))
+    n_err = sum(1 for r in rows if "error" in r)
+    print(f"\n[answers] {out}: {len(rows)} written ({n_err} errors), {len(merged)} total rows")
+
+
+# ---------------------------------------------------------------------------
 # Cross-language consistency check
 # ---------------------------------------------------------------------------
 
@@ -980,6 +1037,16 @@ def main() -> None:
     _add_phase_a_args(phase_a)
 
     # ------------------------------------------------------------------
+    # Canonical answer export
+    # ------------------------------------------------------------------
+    ans_p = subs.add_parser(
+        "answers",
+        help="Export canonical GT answers per (problem, language) for the web charts.",
+    )
+    _add_phase_a_args(ans_p)
+    ans_p.set_defaults(report=None)
+
+    # ------------------------------------------------------------------
     # Cross-language check
     # ------------------------------------------------------------------
     cross_p = subs.add_parser(
@@ -1065,6 +1132,10 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Dispatch
     # ------------------------------------------------------------------
+    if args.subcommand == "answers":
+        cmd_answers(args)
+        return
+
     if args.subcommand == "crosscheck":
         cmd_crosscheck(args)
         return
