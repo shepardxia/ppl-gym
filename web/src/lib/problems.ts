@@ -3,6 +3,29 @@ import { join, resolve } from 'node:path';
 
 /** Corpus file stems, in display order. */
 export const CORPORA = ['probmods2', 'dippl', 'forestdb'] as const;
+export type Corpus = (typeof CORPORA)[number];
+
+/** Display metadata per corpus — one home for names and descriptions. */
+export const CORPUS_META: Record<Corpus, { label: string; description: string; sourceUrl: string; sourceName: string }> = {
+  probmods2: {
+    label: 'ProbMods',
+    description: 'Exercises from Probabilistic Models of Cognition — Bayesian cognition and probabilistic inference.',
+    sourceUrl: 'http://probmods.org',
+    sourceName: 'probmods.org',
+  },
+  dippl: {
+    label: 'DIPPL',
+    description: 'Exercises from The Design and Implementation of Probabilistic Programming Languages — PPL semantics, enumeration, particle filtering.',
+    sourceUrl: 'http://dippl.org',
+    sourceName: 'dippl.org',
+  },
+  forestdb: {
+    label: 'Forest',
+    description: 'Published WebPPL models from the Forest repository — RSA pragmatics, social reasoning, concept learning.',
+    sourceUrl: 'http://forestdb.org',
+    sourceName: 'forestdb.org',
+  },
+};
 
 // Astro's build/prerender runs with CWD = the Astro project root (web/).
 // import.meta.url-based resolution BREAKS after Vite bundles this into
@@ -41,7 +64,6 @@ export interface Realization {
   problem_id: string;
   language: string;
   code: string;
-  gate?: Record<string, unknown>;
 }
 
 export interface GatePhaseA {
@@ -68,6 +90,18 @@ export interface GatePhaseB {
   n_solvers?: number;
 }
 
+export interface GateCross {
+  problem_id: string;
+  status: 'pass' | 'fail' | 'ill_posed' | 'error';
+  distance?: number;
+  tol?: number;
+  target_floor?: number;
+  reference_floor?: number;
+  metric?: string;
+  language?: string;
+  reference?: string;
+}
+
 // ─── Joined record exposed to pages ─────────────────────────────────────────
 
 export interface ProblemRecord {
@@ -76,7 +110,8 @@ export interface ProblemRecord {
   pyroRealization: Realization | null;
   gateA: GatePhaseA | null;
   gateB: GatePhaseB | null;
-  corpus: 'probmods2' | 'dippl' | 'forestdb';
+  crosscheck: GateCross | null;
+  corpus: Corpus;
 }
 
 // ─── JSONL reader ────────────────────────────────────────────────────────────
@@ -111,11 +146,12 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
 
 
   // Read all four files in parallel.
-  const [realizations, pyroRealizations, gateARows, gateBRows, ...corpusRows] = await Promise.all([
+  const [realizations, pyroRealizations, gateARows, gateBRows, crossRows, ...corpusRows] = await Promise.all([
     readJsonl<Realization>(join(DATA_DIR, 'realizations', 'webppl.jsonl')),
     readJsonl<Realization>(join(DATA_DIR, 'realizations', 'pyro.jsonl')),
     readJsonl<GatePhaseA>(join(DATA_DIR, 'problems', '_gate_report.jsonl')),
     readJsonl<GatePhaseB>(join(DATA_DIR, 'problems', '_gate_solver_report.jsonl')),
+    readJsonl<GateCross>(join(DATA_DIR, 'problems', '_gate_crosscheck_report.jsonl')),
     ...CORPORA.map((c) => readJsonl<Problem>(join(DATA_DIR, 'problems', `${c}.jsonl`))),
   ]);
 
@@ -131,6 +167,9 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
   const gateBByPid = new Map<string, GatePhaseB>();
   for (const r of gateBRows) gateBByPid.set(r.problem_id, r);
 
+  const crossByPid = new Map<string, GateCross>();
+  for (const r of crossRows) crossByPid.set(r.problem_id, r);
+
   const out: ProblemRecord[] = [];
   for (let i = 0; i < CORPORA.length; i++) {
     const corpus = CORPORA[i];
@@ -145,6 +184,7 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
         pyroRealization: pyroByPid.get(problem.problem_id) ?? null,
         gateA: gateAByPid.get(problem.problem_id) ?? null,
         gateB: gateBByPid.get(problem.problem_id) ?? null,
+        crosscheck: crossByPid.get(problem.problem_id) ?? null,
       });
     }
   }
@@ -153,7 +193,7 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
   return out;
 }
 
-export async function loadAllProblemsGrouped(): Promise<Record<'probmods2' | 'dippl' | 'forestdb', ProblemRecord[]>> {
+export async function loadAllProblemsGrouped(): Promise<Record<Corpus, ProblemRecord[]>> {
   const all = await loadAllProblems();
   const out = { probmods2: [] as ProblemRecord[], dippl: [] as ProblemRecord[], forestdb: [] as ProblemRecord[] };
   for (const rec of all) out[rec.corpus].push(rec);
@@ -190,4 +230,39 @@ export function specChip(spec: AnswerSpec): string {
     return `record(${Object.keys(fields).join(', ')})`;
   }
   return d ? `${k}/${d}` : k;
+}
+
+// ─── Dataset stats (computed, used by the landing page and problems hub) ────
+
+export interface DatasetStats {
+  total: number;
+  byCorpus: { corpus: Corpus; count: number }[];
+  bySpec: { chip: string; count: number }[];
+  webpplVerified: number;
+  pyroVerified: number;
+}
+
+export async function datasetStats(): Promise<DatasetStats> {
+  const all = await loadAllProblems();
+  const byCorpus = CORPORA.map((c) => ({
+    corpus: c,
+    count: all.filter((r) => r.corpus === c).length,
+  }));
+  const specCounts = new Map<string, number>();
+  for (const r of all) {
+    const k = specKind(r.problem.answer_spec) === 'record'
+      ? 'record'
+      : specChip(r.problem.answer_spec);
+    specCounts.set(k, (specCounts.get(k) ?? 0) + 1);
+  }
+  const bySpec = [...specCounts.entries()]
+    .map(([chip, count]) => ({ chip, count }))
+    .sort((a, b) => b.count - a.count);
+  return {
+    total: all.length,
+    byCorpus,
+    bySpec,
+    webpplVerified: all.filter((r) => r.gateB?.status === 'accept').length,
+    pyroVerified: all.filter((r) => r.crosscheck?.status === 'pass').length,
+  };
 }

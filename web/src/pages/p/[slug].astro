@@ -1,6 +1,7 @@
 ---
 import Layout from '@/layouts/Layout.astro';
 import ProblemDetail from '@/components/ProblemDetail.astro';
+import SiteHeader from '@/components/SiteHeader.astro';
 import { loadAllProblems, problemSlug, type ProblemRecord } from '@/lib/problems';
 
 export const prerender = true;
@@ -17,5 +18,8 @@ const { record } = Astro.props as { record: ProblemRecord };
 ---
 
 <Layout title={`${record.problem.problem_id} — ppl-gym`}>
-  <ProblemDetail record={record} />
+  <div class="page-wrap">
+    <SiteHeader active="/problems" />
+    <ProblemDetail record={record} />
+  </div>
 </Layout>

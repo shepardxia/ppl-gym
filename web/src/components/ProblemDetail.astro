@@ -1,6 +1,6 @@
 ---
 import type { ProblemRecord } from '@/lib/problems';
-import { specChip } from '@/lib/problems';
+import { specChip, CORPUS_META } from '@/lib/problems';
 import { statusTone, statusLabel } from '@/lib/tones';
 import { renderCode, escapeHtml } from '@/lib/render';
 
@@ -8,12 +8,14 @@ interface Props {
   record: ProblemRecord;
 }
 const { record } = Astro.props;
-const { problem, realization, pyroRealization, gateA, gateB } = record;
+const { problem, realization, pyroRealization, gateA, gateB, crosscheck } = record;
 
 const chip     = specChip(problem.answer_spec);
 const toneA    = statusTone(gateA?.status);
 const toneB    = statusTone(gateB?.status);
 const toneR    = statusTone(problem.status.review);
+const toneX    = statusTone(crosscheck?.status);
+const corpusMeta = CORPUS_META[record.corpus];
 
 const specJson = JSON.stringify(problem.answer_spec, null, 2);
 const codeHtml = realization?.code ? renderCode(realization.code, 'webppl') : null;
@@ -34,20 +36,25 @@ function fmtNum(v: number | undefined): string {
 
   <!-- ── Header ─────────────────────────────────────────────────────────── -->
   <header class="pd-header">
-    <div class="pd-id-row">
-      <a class="pd-back" href="/">← all problems</a>
-    </div>
+    <nav class="crumbs">
+      <a href="/problems/">Problems</a><span class="crumbs-sep">›</span><a href={`/problems/${record.corpus}/`}>{corpusMeta.label}</a><span class="crumbs-sep">›</span><span>{problem.problem_id.split('/').pop()}</span>
+    </nav>
     <h1 class="pd-title">{problem.problem_id}</h1>
     <div class="pd-chips">
       <span class="chip chip-spec" title="answer spec">{chip}</span>
       {gateB && (
-        <span class={`chip chip-tone-${toneB}`} title="phase-B solver gate">
+        <span class={`chip chip-tone-${toneB}`} title="solver re-derivation gate">
           solver: {statusLabel(gateB.status)}
         </span>
       )}
+      {crosscheck && (
+        <span class={`chip chip-tone-${toneX}`} title="cross-language gate (Pyro vs WebPPL GT)">
+          pyro: {statusLabel(crosscheck.status)}
+        </span>
+      )}
       {gateA && (
-        <span class={`chip chip-tone-${toneA}`} title="phase-A GT gate">
-          GT gate: {statusLabel(gateA.status)}
+        <span class={`chip chip-tone-${toneA}`} title="GT self-consistency">
+          GT: {statusLabel(gateA.status)}
         </span>
       )}
       <span class={`chip chip-tone-${toneR}`} title="review status">
@@ -121,16 +128,16 @@ function fmtNum(v: number | undefined): string {
   <!-- ── Gate panel ─────────────────────────────────────────────────────── -->
   <section class="pd-section">
     <div class="section-title">
-      <span class="section-title-num">04</span>
-      <span>gate results</span>
+      <span class="section-title-num">05</span>
+      <span>verification</span>
     </div>
 
     <div class="gate-panel">
-      <!-- Phase-A row -->
+      <!-- GT self-consistency (phase A) -->
       <div class="gate-row">
         <div class="gate-row-hd">
-          <span class="gate-phase-label">phase-A</span>
-          <span class="gate-row-desc">GT determinism / floor check</span>
+          <span class="gate-phase-label">GT self-consistency</span>
+          <span class="gate-row-desc">the ground truth at k seeds: measured noise floor (phase A)</span>
         </div>
         {gateA ? (
           <div class="gate-row-cells">
@@ -152,15 +159,15 @@ function fmtNum(v: number | undefined): string {
             )}
           </div>
         ) : (
-          <p class="pd-empty gate-empty">No phase-A data.</p>
+          <p class="pd-empty gate-empty">No self-consistency data.</p>
         )}
       </div>
 
-      <!-- Phase-B row -->
+      <!-- Solver re-derivation (phase B) -->
       <div class="gate-row">
         <div class="gate-row-hd">
-          <span class="gate-phase-label">phase-B</span>
-          <span class="gate-row-desc">solver re-derivation agreement</span>
+          <span class="gate-phase-label">solver re-derivation</span>
+          <span class="gate-row-desc">independent solvers reproduce the GT from the statement alone (phase B)</span>
         </div>
         {gateB ? (
           <div class="gate-row-cells">
@@ -211,7 +218,49 @@ function fmtNum(v: number | undefined): string {
             )}
           </div>
         ) : (
-          <p class="pd-empty gate-empty">No phase-B data.</p>
+          <p class="pd-empty gate-empty">No solver-gate data.</p>
+        )}
+      </div>
+
+      <!-- Cross-language (Pyro vs WebPPL GT) -->
+      <div class="gate-row">
+        <div class="gate-row-hd">
+          <span class="gate-phase-label">cross-language</span>
+          <span class="gate-row-desc">the Pyro realization vs the WebPPL GT, within both sides' measured noise</span>
+        </div>
+        {crosscheck ? (
+          <div class="gate-row-cells">
+            <div class="gate-cell">
+              <span class="gate-cell-key">status</span>
+              <span class={`chip chip-tone-${toneX}`}>{statusLabel(crosscheck.status)}</span>
+            </div>
+            {crosscheck.distance != null && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">distance</span>
+                <span class="gate-cell-val">{fmtNum(crosscheck.distance)}</span>
+              </div>
+            )}
+            {crosscheck.tol != null && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">tolerance</span>
+                <span class="gate-cell-val">{fmtNum(crosscheck.tol)}</span>
+              </div>
+            )}
+            {crosscheck.target_floor != null && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">pyro floor</span>
+                <span class="gate-cell-val">{fmtNum(crosscheck.target_floor)}</span>
+              </div>
+            )}
+            {crosscheck.reference_floor != null && (
+              <div class="gate-cell">
+                <span class="gate-cell-key">webppl floor</span>
+                <span class="gate-cell-val">{fmtNum(crosscheck.reference_floor)}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p class="pd-empty gate-empty">No cross-language data.</p>
         )}
       </div>
     </div>
@@ -221,7 +270,7 @@ function fmtNum(v: number | undefined): string {
   {problem.status.notes && (
     <section class="pd-section">
       <div class="section-title">
-        <span class="section-title-num">05</span>
+        <span class="section-title-num">06</span>
         <span>notes</span>
       </div>
       <p class="pd-notes">{problem.status.notes}</p>
@@ -284,19 +333,12 @@ function fmtNum(v: number | undefined): string {
   padding: 32px 24px 80px;
 }
 
-.pd-back {
-  font-size: 12px;
-  color: var(--fg-dim);
-  text-decoration: none;
-  font-family: var(--font-mono);
-}
-.pd-back:hover { color: var(--accent); }
 
 .pd-id-row { margin-bottom: 12px; }
 
 .pd-title {
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
   margin: 0 0 10px;
   color: var(--fg);
@@ -311,14 +353,14 @@ function fmtNum(v: number | undefined): string {
 }
 
 .pd-provenance {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--fg-dim);
   margin-bottom: 4px;
 }
 
 .pd-source-code {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   background: var(--code-bg);
   padding: 1px 4px;
   border-radius: 2px;
@@ -331,12 +373,12 @@ function fmtNum(v: number | undefined): string {
 
 .pd-empty {
   color: var(--fg-dim);
-  font-size: 13px;
+  font-size: 14.5px;
   margin: 8px 0 0;
 }
 
 .pd-notes {
-  font-size: 13px;
+  font-size: 14.5px;
   color: var(--fg-mid);
   line-height: 1.6;
   background: var(--bg-elev);
@@ -363,7 +405,7 @@ function fmtNum(v: number | undefined): string {
 }
 
 .stmt-field-hd {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -374,7 +416,7 @@ function fmtNum(v: number | undefined): string {
 
 .stmt-field-body {
   margin: 0;
-  font-size: 14px;
+  font-size: 15.5px;
   line-height: 1.6;
   color: var(--fg);
 }
@@ -403,7 +445,7 @@ function fmtNum(v: number | undefined): string {
 
 .gate-phase-label {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -411,7 +453,7 @@ function fmtNum(v: number | undefined): string {
 }
 
 .gate-row-desc {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--fg-dim);
 }
 
@@ -429,7 +471,7 @@ function fmtNum(v: number | undefined): string {
 }
 
 .gate-cell-key {
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--fg-dim);
   font-family: var(--font-mono);
   text-transform: uppercase;
@@ -438,12 +480,12 @@ function fmtNum(v: number | undefined): string {
 
 .gate-cell-val {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--fg);
 }
 
 .gate-cell-mono {
-  font-size: 11px;
+  font-size: 12.5px;
 }
 
 .gate-empty {
@@ -451,43 +493,8 @@ function fmtNum(v: number | undefined): string {
 }
 
 /* ── Chip styles ─────────────────────────────────────────────────────────── */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 7px;
-  border-radius: 3px;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  border: 1px solid transparent;
-}
 
-.chip-spec {
-  color: var(--fg-mid);
-  background: var(--bg-elev-2);
-  border-color: var(--border);
-}
 
-.chip-tone-good {
-  color: var(--tone-good-fg);
-  background: var(--tone-good-bg);
-  border-color: var(--tone-good-bd);
-}
-.chip-tone-warn {
-  color: var(--tone-ok-fg);
-  background: var(--tone-ok-bg);
-  border-color: var(--tone-ok-bd);
-}
-.chip-tone-bad {
-  color: var(--tone-bad-fg);
-  background: var(--tone-bad-bg);
-  border-color: var(--tone-bad-bd);
-}
-.chip-tone-na {
-  color: var(--fg-faint);
-  background: var(--tone-na-bg);
-  border-color: var(--tone-na-bd);
-}
 
 /* ── Feedback widget ─────────────────────────────────────────────────────── */
 .fb { margin-top: 36px; }
@@ -510,7 +517,7 @@ function fmtNum(v: number | undefined): string {
   background: var(--bg-elev);
   color: var(--fg);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14.5px;
   transition: background 0.1s;
 }
 .fb-btn:hover { background: var(--bg-elev-2); }
@@ -525,7 +532,7 @@ function fmtNum(v: number | undefined): string {
 .fb-primary:hover { background: var(--accent); color: white; }
 
 .fb-name {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--fg-dim);
   margin-left: auto;
 }
@@ -543,7 +550,7 @@ function fmtNum(v: number | undefined): string {
   background: var(--bg-elev);
   color: var(--fg);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: 14.5px;
   resize: vertical;
 }
 .fb-comment-row {
@@ -553,7 +560,7 @@ function fmtNum(v: number | undefined): string {
   margin-top: 6px;
 }
 
-.fb-status { font-size: 12px; color: var(--fg-dim); }
+.fb-status { font-size: 13.5px; color: var(--fg-dim); }
 .fb-status.is-ok { color: var(--tone-good-fg); }
 .fb-status.is-err { color: var(--tone-bad-fg); }
 
@@ -578,8 +585,8 @@ function fmtNum(v: number | undefined): string {
   width: 90%;
   box-shadow: 0 8px 32px rgba(0,0,0,0.15);
 }
-.modal h2 { margin: 0 0 8px; font-size: 15px; }
-.modal p { font-size: 13px; color: var(--fg-mid); margin: 0 0 14px; }
+.modal h2 { margin: 0 0 8px; font-size: 16.5px; }
+.modal p { font-size: 14.5px; color: var(--fg-mid); margin: 0 0 14px; }
 .modal input {
   width: 100%;
   padding: 8px 10px;
@@ -587,7 +594,7 @@ function fmtNum(v: number | undefined): string {
   border-radius: 4px;
   background: var(--bg);
   color: var(--fg);
-  font-size: 14px;
+  font-size: 15.5px;
   font-family: var(--font-mono);
 }
 .modal-buttons {
@@ -603,7 +610,7 @@ function fmtNum(v: number | undefined): string {
   background: var(--bg-elev);
   color: var(--fg);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14.5px;
 }
 .modal-buttons button.primary {
   background: var(--accent);

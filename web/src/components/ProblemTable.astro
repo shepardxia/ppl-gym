@@ -1,0 +1,67 @@
+---
+import type { ProblemRecord } from '@/lib/problems';
+import { problemSlug, specChip } from '@/lib/problems';
+import { statusTone, statusLabel } from '@/lib/tones';
+
+interface Props {
+  records: ProblemRecord[];
+}
+const { records } = Astro.props;
+---
+<table class="problem-table">
+  <thead>
+    <tr>
+      <th class="col-id">problem</th>
+      <th class="col-spec">answer</th>
+      <th class="col-gateB">solver gate</th>
+      <th class="col-cross">cross-language</th>
+      <th class="col-review">review</th>
+    </tr>
+  </thead>
+  <tbody>
+    {records.map(({ problem, gateB, crosscheck }) => {
+      const slug = problemSlug(problem.problem_id);
+      const chip = specChip(problem.answer_spec);
+      const toneB = statusTone(gateB?.status);
+      const toneX = statusTone(crosscheck?.status);
+      const toneR = statusTone(problem.status.review);
+      return (
+        <tr class="problem-row" data-href={`/p/${slug}/`}>
+          <td class="col-id">
+            <a class="pid-link" href={`/p/${slug}/`}>{problem.problem_id}</a>
+          </td>
+          <td class="col-spec">
+            <span class="chip chip-spec">{chip}</span>
+          </td>
+          <td class="col-gateB">
+            {gateB ? (
+              <span class={`chip chip-tone-${toneB}`}>{statusLabel(gateB.status)}</span>
+            ) : (
+              <span class="chip chip-tone-na">—</span>
+            )}
+          </td>
+          <td class="col-cross">
+            {crosscheck ? (
+              <span class={`chip chip-tone-${toneX}`}>pyro: {statusLabel(crosscheck.status)}</span>
+            ) : (
+              <span class="chip chip-tone-na">—</span>
+            )}
+          </td>
+          <td class="col-review">
+            <span class={`chip chip-tone-${toneR}`}>{statusLabel(problem.status.review)}</span>
+          </td>
+        </tr>
+      );
+    })}
+  </tbody>
+</table>
+
+<script is:inline>
+  document.querySelectorAll('.problem-row[data-href]').forEach((row) => {
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', (e) => {
+      if (e.target.tagName === 'A') return;
+      window.location.href = row.dataset.href;
+    });
+  });
+</script>

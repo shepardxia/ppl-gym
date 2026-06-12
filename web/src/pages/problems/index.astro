@@ -1,0 +1,92 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import SiteHeader from '@/components/SiteHeader.astro';
+import { datasetStats, CORPUS_META } from '@/lib/problems';
+
+export const prerender = true;
+
+const stats = await datasetStats();
+---
+
+<Layout title="Problems — ppl-gym">
+  <div class="page-wrap">
+    <SiteHeader />
+
+    <main class="hub">
+      <h1 class="page-title">Problems</h1>
+      <p class="page-lead">
+        {stats.total} problems across three source corpora. Every problem is a
+        language-neutral statement with verified WebPPL and Pyro ground truths;
+        pick a corpus to browse.
+      </p>
+
+      <section class="landing-section">
+        <div class="section-title">
+          <span class="section-title-num">01</span>
+          <span>by source</span>
+        </div>
+        <div class="corpus-cards">
+          {stats.byCorpus.map(({ corpus, count }) => {
+            const meta = CORPUS_META[corpus];
+            return (
+              <a class="corpus-card" href={`/problems/${corpus}/`}>
+                <div class="corpus-card-hd">
+                  <span class="corpus-card-name">{meta.label}</span>
+                  <span class="corpus-card-count">{count} problems</span>
+                </div>
+                <p class="corpus-card-desc">{meta.description}</p>
+                <span class="corpus-card-src">{meta.sourceName}</span>
+              </a>
+            );
+          })}
+        </div>
+      </section>
+
+      <section class="landing-section">
+        <div class="section-title">
+          <span class="section-title-num">02</span>
+          <span>by answer type</span>
+        </div>
+        <table class="stats-table">
+          <thead><tr><th>answer spec</th><th>problems</th></tr></thead>
+          <tbody>
+            {stats.bySpec.map(({ chip, count }) => (
+              <tr><td><span class="chip chip-spec">{chip}</span></td><td>{count}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="landing-section">
+        <div class="section-title">
+          <span class="section-title-num">03</span>
+          <span>verification status</span>
+        </div>
+        <table class="stats-table">
+          <thead><tr><th>column</th><th>verified</th><th>how</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>WebPPL</td>
+              <td>{stats.webpplVerified}/{stats.total}</td>
+              <td>solver re-derivation gate (independent LLM solvers reproduce the GT from the statement alone)</td>
+            </tr>
+            <tr>
+              <td>Pyro</td>
+              <td>{stats.pyroVerified}/{stats.total}</td>
+              <td>cross-language gate (agreement with the WebPPL GT within both sides' measured noise)</td>
+            </tr>
+            <tr>
+              <td>Stan</td>
+              <td>—</td>
+              <td>planned</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="landing-more">
+          What the verdicts mean: <a href="/methodology/">methodology</a> ·
+          per-problem evidence is on each problem page.
+        </p>
+      </section>
+    </main>
+  </div>
+</Layout>

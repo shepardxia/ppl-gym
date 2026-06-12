@@ -1,34 +1,15 @@
 ---
 import Layout from './Layout.astro';
+import SiteHeader from '@/components/SiteHeader.astro';
 
 interface Props {
   title: string;
 }
 const { title } = Astro.props;
-const path = Astro.url.pathname.replace(/\/$/, '');
-const NAV = [
-  { href: '/', label: 'Problems' },
-  { href: '/about', label: 'About' },
-  { href: '/methodology', label: 'Methodology' },
-  { href: '/dataset', label: 'Dataset' },
-  { href: '/updates', label: 'Updates' },
-  { href: '/reviewing', label: 'Reviewing' },
-  { href: '/results', label: 'Results' },
-];
 ---
 <Layout title={`${title} — ppl-gym`}>
-  <div class="docs">
-    <header class="docs-header">
-      <a class="brand" href="/">
-        <span class="brand-mark"><span>{'{'}</span><span class="brand-mark-tilde">~</span><span>{'}'}</span></span>
-        <span class="brand-name">ppl<span class="brand-name-dim">·</span>gym</span>
-      </a>
-      <nav class="docs-nav">
-        {NAV.map((n) => (
-          <a href={n.href} class={path === n.href.replace(/\/$/, '') ? 'is-active' : ''}>{n.label}</a>
-        ))}
-      </nav>
-    </header>
+  <div class="page-wrap">
+    <SiteHeader />
     <main class="docs-prose">
       <h1>{title}</h1>
       <slot />

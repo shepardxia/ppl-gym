@@ -1,0 +1,32 @@
+---
+// Global site header — every page renders this.
+interface Props {
+  /** Nav item to mark active; defaults to path matching. */
+  active?: string;
+}
+const { active } = Astro.props;
+const path = Astro.url.pathname.replace(/\/$/, '');
+const NAV = [
+  { href: '/problems', label: 'Problems' },
+  { href: '/methodology', label: 'Methodology' },
+  { href: '/reviewing', label: 'Reviewing' },
+  { href: '/updates', label: 'Updates' },
+  { href: '/results', label: 'Results' },
+];
+function isActive(href: string): boolean {
+  if (active) return active === href;
+  return path === href || path.startsWith(href + '/');
+}
+---
+<header class="site-header">
+  <a class="brand" href="/">
+    <span class="brand-mark"><span>{'{'}</span><span class="brand-mark-tilde">~</span><span>{'}'}</span></span>
+    <span class="brand-name">ppl<span class="brand-name-dim">·</span>gym</span>
+  </a>
+  <nav class="site-nav">
+    {NAV.map((n) => (
+      <a href={`${n.href}/`} class={isActive(n.href) ? 'is-active' : ''}>{n.label}</a>
+    ))}
+    <a href="https://github.com/shepardxia/ppl-gym" class="site-nav-ext" target="_blank" rel="noopener">GitHub ↗</a>
+  </nav>
+</header>
