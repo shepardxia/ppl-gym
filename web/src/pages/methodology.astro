@@ -16,14 +16,14 @@ export const prerender = true;
     { t: 'realizations', s: 'WebPPL · Pyro' },
     { t: 'two gates', s: 'solver re-derivation<br/>cross-language' },
     { t: 'verified dataset', s: '115 problems', tone: 'good' },
-  ]} label="Statements are language-neutral prose that pin the answer — never the program. A ground truth ships only after surviving both gates." />
+  ]} label="Statements are language-neutral prose that pin the answer and leave the program open. A ground truth ships after surviving both gates." />
 
-  <h2>Tolerance — measured, never authored</h2>
+  <h2>Measured tolerance</h2>
   <Flow steps={[
     { t: 'ground truth', s: 'k seeded runs' },
     { t: 'noise floor', s: 'max pairwise distance' },
     { t: 'tolerance', s: 'margin × floor' },
-  ]} label="No hand-set thresholds anywhere. Deterministic problems demand near-exact answers; stochastic ones get exactly the slack their own noise justifies." />
+  ]} label="Each problem’s threshold comes from its own ground-truth noise: deterministic problems demand near-exact answers; stochastic ones get exactly the slack their sampling justifies." />
 
   <h2>Gate 1 — solver re-derivation</h2>
   <Flow steps={[
@@ -44,6 +44,6 @@ export const prerender = true;
   <p>
     Ground truth matching its textbook source is authoritative; statements are
     the rewritable layer. Source overrides require documented evidence of internal
-    inconsistency. Retired problems are parked with reasons, never deleted.
+    inconsistency. Retired problems are parked with reasons.
   </p>
 </DocsLayout>

@@ -9,9 +9,6 @@ const path = Astro.url.pathname.replace(/\/$/, '');
 const NAV = [
   { href: '/', label: 'Browse' },
   { href: '/methodology', label: 'Methodology' },
-  { href: '/reviewing', label: 'Reviewing' },
-  { href: '/updates', label: 'Updates' },
-  { href: '/results', label: 'Results' },
 ];
 function isActive(href: string): boolean {
   if (active) return active === href;

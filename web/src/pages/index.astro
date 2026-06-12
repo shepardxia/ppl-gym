@@ -1,33 +1,16 @@
 ---
 import Layout from '@/layouts/Layout.astro';
-import { loadAllProblemsGrouped, loadGtAnswers, datasetStats, canonicalToRenderOutput, CORPORA, CORPUS_META, problemLeaf } from '@/lib/problems';
+import { loadAllProblemsGrouped, CORPORA, CORPUS_META } from '@/lib/problems';
 import { loadAllCollections } from '@/lib/atoms';
-import { renderChart, isDistLike } from '@/lib/render';
-import type { RenderOutput } from '@/lib/types';
+import { Content as Updates } from '@/docs/updates.md';
 
 export const prerender = true;
 
 const grouped = await loadAllProblemsGrouped();
-const stats = await datasetStats();
-const gtAnswers = await loadGtAnswers();
 const legacy = await loadAllCollections();
-
-// ── Teaser: one real problem, shown as the product ──
-const TEASER_ID = 'probmods2-conditioning/ex6.c';
-const teaser = (grouped.probmods2 ?? []).find((r) => r.problem.problem_id === TEASER_ID)!;
-const tAns = gtAnswers.get(TEASER_ID);
-const tA = canonicalToRenderOutput(tAns?.webppl?.answer) as RenderOutput;
-const tB = canonicalToRenderOutput(tAns?.pyro?.answer) as RenderOutput;
-const teaserChart = (isDistLike(tA) || isDistLike(tB))
-  ? renderChart({ a: isDistLike(tA) ? tA : null, b: isDistLike(tB) ? tB : null, labelA: 'webppl', labelB: 'pyro' })
-  : '';
-
-function verifiedCount(c: (typeof CORPORA)[number]): number {
-  return (grouped[c] ?? []).filter((r) => r.gateB?.status === 'accept' && r.crosscheck?.status === 'pass').length;
-}
 ---
 
-<Layout title="ppl-gym — verified probabilistic-programming problems">
+<Layout title="ppl-gym">
   <div class="land">
     <header class="land-top">
       <div class="brand">
@@ -35,57 +18,100 @@ function verifiedCount(c: (typeof CORPORA)[number]): number {
         <span class="brand-name">ppl<span class="brand-name-dim">·</span>gym</span>
       </div>
       <nav class="land-nav">
-        <a href="/problems/probmods2/">problems</a>
+        <a href="/problems/probmods2/">browse</a>
         <a href="/methodology/">methodology</a>
-        <a href="/updates/">updates</a>
-        <a href="/reviewing/">reviewing</a>
-        <a href="/results/">results</a>
         <a href="https://github.com/shepardxia/ppl-gym" class="land-nav-ext">GitHub ↗</a>
       </nav>
     </header>
 
-    <section class="land-hero">
-      <div class="land-pitch">
-        <h1>Probabilistic-programming problems, verified to be solvable as stated.</h1>
-        <p>
-          Language-neutral statements with ground truths in WebPPL and Pyro —
-          every problem re-derived by independent solvers and cross-checked
-          between languages, within tolerances measured from its own noise.
-        </p>
-        <div class="land-cta">
-          <a class="btn-primary" href="/problems/probmods2/">browse problems</a>
-          <a class="btn-secondary" href="/methodology/">methodology</a>
-        </div>
-        <div class="land-stats">
-          <span class="topbar-stat"><span class="topbar-stat-key">problems</span><span class="topbar-stat-val">{stats.total}</span></span>
-          <span class="topbar-stat"><span class="topbar-stat-key">corpora</span><span class="topbar-stat-val">{stats.byCorpus.length}</span></span>
-          <span class="topbar-stat"><span class="topbar-stat-key">solver-verified</span><span class="topbar-stat-val">{stats.webpplVerified}/{stats.total}</span></span>
-          <span class="topbar-stat"><span class="topbar-stat-key">cross-verified</span><span class="topbar-stat-val">{stats.pyroVerified}/{stats.total}</span></span>
-        </div>
-      </div>
-
-      <a class="land-teaser" href={`/problems/${teaser.corpus}/#${encodeURIComponent(TEASER_ID)}`}>
-        <div class="land-teaser-hd">
-          <span class="land-teaser-lbl">from the dataset</span>
-          <span class="land-teaser-id">{TEASER_ID}</span>
-        </div>
-        <p class="land-teaser-stmt">
-          “{teaser.problem.statement.given}” — {teaser.problem.statement.query}
-        </p>
-        <div class="land-teaser-chips">
-          <span class="bucket bucket-great bucket-xs"><span class="bucket-glyph">✓</span><span class="bucket-label">solver: accept</span></span>
-          <span class="bucket bucket-great bucket-xs"><span class="bucket-glyph">✓</span><span class="bucket-label">pyro: pass</span></span>
-        </div>
-        <div class="land-teaser-chart" set:html={teaserChart} />
-        <span class="land-teaser-open">open in the browser →</span>
-      </a>
+    <section class="land-intro">
+      <h1>PPL-gym</h1>
+      <p>
+        ppl-gym is a dataset of probabilistic programming problems for language
+        models, where each problem's solutions are available in multiple PPLs.
+      </p>
+      <p>
+        The multi-PPL solution set is motivated by the observation that every
+        PPL, on its own, is low-resource. But the problems translate across
+        languages — one set pools across all of them, with answers checkable in
+        a shared intermediate representation.
+      </p>
     </section>
 
+    <figure class="land-fig">
+      <svg viewBox="0 0 880 300" role="img" aria-label="One problem statement, programs in several PPLs, one shared answer space">
+        <defs>
+          <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--fg-faint)" />
+          </marker>
+        </defs>
+
+        <!-- statement -->
+        <rect x="16" y="86" width="186" height="124" rx="8" fill="var(--bg-elev)" stroke="var(--border-strong)" />
+        <text x="32" y="112" font-family="var(--font-mono)" font-size="12" fill="var(--fg)">problem statement</text>
+        <g stroke="var(--fg-faint)" stroke-width="3" stroke-linecap="round" opacity="0.55">
+          <line x1="32" y1="130" x2="184" y2="130" />
+          <line x1="32" y1="144" x2="170" y2="144" />
+          <line x1="32" y1="158" x2="184" y2="158" />
+          <line x1="32" y1="172" x2="150" y2="172" />
+          <line x1="32" y1="186" x2="176" y2="186" />
+        </g>
+
+        <!-- programs -->
+        <g font-family="var(--font-mono)" font-size="12">
+          <rect x="296" y="22" width="168" height="68" rx="8" fill="var(--bg-elev)" stroke="var(--border)" />
+          <text x="310" y="44" fill="var(--fg)">WebPPL program</text>
+          <g stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
+            <line x1="310" y1="58" x2="430" y2="58" /><line x1="310" y1="70" x2="396" y2="70" />
+          </g>
+
+          <rect x="296" y="116" width="168" height="68" rx="8" fill="var(--bg-elev)" stroke="var(--border)" />
+          <text x="310" y="138" fill="var(--fg)">Pyro program</text>
+          <g stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
+            <line x1="310" y1="152" x2="412" y2="152" /><line x1="310" y1="164" x2="436" y2="164" />
+          </g>
+
+          <rect x="296" y="210" width="168" height="68" rx="8" fill="var(--bg-elev)" stroke="var(--border)" stroke-dasharray="4 4" />
+          <text x="310" y="232" fill="var(--fg-dim)">any other PPL</text>
+          <g stroke="var(--fg-faint)" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
+            <line x1="310" y1="246" x2="420" y2="246" /><line x1="310" y1="258" x2="388" y2="258" />
+          </g>
+        </g>
+
+        <!-- statement -> programs -->
+        <g stroke="var(--fg-faint)" stroke-width="1.4" fill="none" marker-end="url(#arr)">
+          <path d="M206,128 C 248,110 252,72 290,58" />
+          <path d="M206,148 L 290,149" />
+          <path d="M206,170 C 248,188 252,226 290,242" />
+        </g>
+
+        <!-- shared answer space -->
+        <rect x="556" y="40" width="120" height="220" rx="12" fill="var(--accent-bg)" stroke="var(--accent)" stroke-dasharray="5 4" />
+        <text x="616" y="130" font-family="var(--font-mono)" font-size="12" fill="var(--accent)" text-anchor="middle" transform="rotate(-90 616 150)">shared answer space</text>
+
+        <!-- programs -> space -->
+        <g stroke="var(--fg-faint)" stroke-width="1.4" fill="none" marker-end="url(#arr)">
+          <path d="M468,56 C 510,68 514,108 550,122" />
+          <path d="M468,150 L 550,150" />
+          <path d="M468,244 C 510,232 514,192 550,178" />
+        </g>
+
+        <!-- one answer -->
+        <g>
+          <rect x="724" y="92" width="140" height="116" rx="8" fill="var(--bg-elev)" stroke="var(--border-strong)" />
+          <g fill="var(--accent)">
+            <rect x="744" y="148" width="18" height="44" rx="2" />
+            <rect x="772" y="120" width="18" height="72" rx="2" />
+            <rect x="800" y="164" width="18" height="28" rx="2" />
+            <rect x="828" y="172" width="18" height="20" rx="2" />
+          </g>
+          <text x="794" y="116" font-family="var(--font-mono)" font-size="12" fill="var(--fg)" text-anchor="middle">one answer</text>
+        </g>
+        <path d="M680,150 L 718,150" stroke="var(--fg-faint)" stroke-width="1.4" fill="none" marker-end="url(#arr)" />
+      </svg>
+    </figure>
+
     <section class="land-corpora">
-      <div class="section-title">
-        <span class="section-title-num">⌂</span>
-        <span>corpora</span>
-      </div>
       {CORPORA.map((c) => {
         const meta = CORPUS_META[c];
         const n = (grouped[c] ?? []).length;
@@ -93,23 +119,19 @@ function verifiedCount(c: (typeof CORPORA)[number]): number {
           <a class="land-corpus" href={`/problems/${c}/`}>
             <span class="land-corpus-name">{meta.label}</span>
             <span class="land-corpus-desc">{meta.description}</span>
-            <span class="land-corpus-meta">
-              <b>{n}</b> problems · {verifiedCount(c)} verified
-            </span>
+            <span class="land-corpus-meta"><b>{n}</b> problems</span>
             <span class="land-corpus-arrow">→</span>
           </a>
         );
       })}
     </section>
 
+    <section class="land-updates">
+      <div class="land-updates-hd">updates</div>
+      <div class="land-updates-body"><Updates /></div>
+    </section>
+
     <footer class="land-foot">
-      <span class="land-foot-grp">
-        <span class="land-foot-key">project</span>
-        <a href="/methodology/">methodology</a> ·
-        <a href="/updates/">updates</a> ·
-        <a href="/reviewing/">reviewing</a> ·
-        <a href="/results/">results</a>
-      </span>
       <span class="land-foot-grp">
         <span class="land-foot-key">legacy archives</span>
         {legacy.map((c, i) => (
@@ -121,12 +143,12 @@ function verifiedCount(c: (typeof CORPORA)[number]): number {
 </Layout>
 
 <style>
-  .land { max-width: 1180px; margin: 0 auto; padding: 26px 32px 64px; }
+  .land { max-width: 980px; margin: 0 auto; padding: 26px 32px 64px; }
 
   .land-top {
     display: flex; align-items: baseline; justify-content: space-between;
     gap: 16px; flex-wrap: wrap;
-    padding-bottom: 14px; margin-bottom: 40px;
+    padding-bottom: 14px; margin-bottom: 36px;
     border-bottom: 1px solid var(--border);
   }
   .land-nav { display: flex; gap: 18px; font: 13px var(--font-mono); }
@@ -134,67 +156,56 @@ function verifiedCount(c: (typeof CORPORA)[number]): number {
   .land-nav a:hover { color: var(--accent); }
   .land-nav-ext { color: var(--fg-faint) !important; }
 
-  .land-hero {
-    display: grid; grid-template-columns: minmax(380px, 1.1fr) minmax(320px, 1fr);
-    gap: 48px; align-items: start;
-    margin-bottom: 48px;
-  }
-  @media (max-width: 900px) { .land-hero { grid-template-columns: 1fr; } }
-
-  .land-pitch h1 {
-    font: 600 34px/1.2 var(--font-prose);
-    letter-spacing: -.015em;
+  .land-intro h1 {
+    font: 600 30px var(--font-prose);
+    letter-spacing: -.01em;
     color: var(--fg);
-    margin: 8px 0 14px;
+    margin: 0 0 14px;
   }
-  .land-pitch p {
+  .land-intro p {
     font: 16.5px/1.6 var(--font-prose);
     color: var(--fg-mid);
-    margin: 0 0 22px;
+    max-width: 760px;
+    margin: 0 0 12px;
   }
-  .land-cta { display: flex; gap: 12px; margin-bottom: 26px; }
-  .land-cta a { text-decoration: none; }
-  .land-stats { display: flex; gap: 18px; flex-wrap: wrap; font: 12.5px var(--font-mono); }
 
-  .land-teaser {
-    display: block;
-    border: 1px solid var(--border-strong);
-    border-radius: 10px;
-    background: var(--bg-elev);
-    padding: 16px 18px;
-    text-decoration: none;
-    transition: border-color .12s ease;
-  }
-  .land-teaser:hover { border-color: var(--accent); }
-  .land-teaser-hd { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin-bottom: 8px; }
-  .land-teaser-lbl { font: 11px var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--fg-faint); }
-  .land-teaser-id { font: 12px var(--font-mono); color: var(--fg-dim); }
-  .land-teaser-stmt { font: 14px/1.55 var(--font-prose); color: var(--fg-mid); margin: 0 0 10px; }
-  .land-teaser-chips { display: flex; gap: 8px; margin-bottom: 10px; }
-  .land-teaser-chart { pointer-events: none; }
-  .land-teaser-open { display: inline-block; margin-top: 10px; font: 12.5px var(--font-mono); color: var(--accent); }
+  .land-fig { margin: 30px 0 40px; }
+  .land-fig svg { width: 100%; height: auto; display: block; }
 
-  .land-corpora { margin-bottom: 44px; }
+  .land-corpora { margin-bottom: 40px; }
   .land-corpus {
     display: grid;
-    grid-template-columns: 150px 1fr auto 24px;
+    grid-template-columns: 130px 1fr auto 24px;
     gap: 18px; align-items: baseline;
-    padding: 13px 6px;
+    padding: 12px 6px;
     border-bottom: 1px solid var(--border);
     text-decoration: none;
   }
   .land-corpus:first-of-type { border-top: 1px solid var(--border); }
   .land-corpus:hover { background: var(--hover); }
-  .land-corpus-name { font: 600 17px var(--font-prose); color: var(--fg); }
+  .land-corpus-name { font: 600 16px var(--font-prose); color: var(--fg); }
   .land-corpus-desc { font: 14px/1.5 var(--font-prose); color: var(--fg-mid); }
   .land-corpus-meta { font: 12.5px var(--font-mono); color: var(--fg-dim); white-space: nowrap; }
   .land-corpus-arrow { color: var(--fg-faint); }
   .land-corpus:hover .land-corpus-arrow { color: var(--accent); }
   @media (max-width: 720px) { .land-corpus { grid-template-columns: 1fr auto; } .land-corpus-desc { display: none; } }
 
+  .land-updates { margin-bottom: 36px; }
+  .land-updates-hd {
+    font: 12px var(--font-mono); text-transform: uppercase; letter-spacing: .08em;
+    color: var(--fg-dim); margin-bottom: 10px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+  .land-updates-body :global(p) {
+    font: 14.5px/1.6 var(--font-prose);
+    color: var(--fg-mid);
+    margin: 0 0 8px;
+  }
+  .land-updates-body :global(strong) { color: var(--fg); }
+  .land-updates-body :global(a) { color: var(--accent); }
+
   .land-foot {
-    display: flex; flex-direction: column; gap: 8px;
-    padding-top: 16px;
+    padding-top: 14px;
     border-top: 1px solid var(--border);
     font: 12.5px var(--font-mono); color: var(--fg-dim);
   }
