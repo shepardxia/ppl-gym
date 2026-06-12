@@ -1,6 +1,7 @@
 ---
 import Layout from '@/layouts/Layout.astro';
 import SiteHeader from '@/components/SiteHeader.astro';
+import Flow from '@/components/Flow.astro';
 import { datasetStats, CORPUS_META } from '@/lib/problems';
 
 export const prerender = true;
@@ -16,12 +17,9 @@ const stats = await datasetStats();
       <section class="hero">
         <h1>Probabilistic-programming problems with machine-verified ground truths.</h1>
         <p class="hero-lead">
-          ppl-gym is a benchmark for evaluating how well language models write
-          probabilistic programs. The unit is a <em>problem</em>, not a program:
-          a language-neutral statement that fully determines its answer, paired
-          with ground-truth realizations in each supported PPL. Nothing ships on
-          trust — every ground truth is gated by independent re-derivation and
-          cross-language agreement.
+          A benchmark for evaluating how well language models write probabilistic
+          programs: language-neutral problem statements, realized and
+          cross-checked in multiple PPLs.
         </p>
       </section>
 
@@ -33,36 +31,19 @@ const stats = await datasetStats();
       </section>
 
       <section class="landing-section">
-        <div class="section-title">
-          <span class="section-title-num">01</span>
-          <span>how the dataset is verified</span>
-        </div>
-        <ul class="claims">
-          <li>
-            <strong>Statements determine answers.</strong> Each problem states its
-            priors, data, and query in prose precise enough that any competent
-            solver, in any PPL, converges to the same answer — enforced by a gate,
-            not by eyeballing.
-          </li>
-          <li>
-            <strong>Tolerances are measured, never authored.</strong> Each problem's
-            acceptance threshold is derived from its own ground truth's seed-to-seed
-            noise. Deterministic problems demand near-exact answers; stochastic ones
-            get exactly the slack their sampling noise justifies.
-          </li>
-          <li>
-            <strong>Languages check each other.</strong> Every Pyro realization must
-            agree with the WebPPL ground truth within both sides' measured noise —
-            a stronger check than solver consensus, which shares the ground truth's
-            blind spots.
-          </li>
-        </ul>
-        <p class="landing-more">Details: <a href="/methodology/">methodology</a>.</p>
+        <Flow steps={[
+          { t: 'textbook sources', s: 'probmods · dippl · forest' },
+          { t: 'problem statement', s: 'given / model / query' },
+          { t: 'realizations', s: 'WebPPL · Pyro' },
+          { t: 'two gates', s: 'solver re-derivation<br/>cross-language' },
+          { t: 'verified dataset', tone: 'good' },
+        ]} label="Statements pin the answer, never the program. Tolerances are measured from each problem's own noise — no hand-set thresholds. Full story: methodology." />
+        <p class="landing-more"><a href="/methodology/">Methodology →</a></p>
       </section>
 
       <section class="landing-section">
         <div class="section-title">
-          <span class="section-title-num">02</span>
+          <span class="section-title-num">01</span>
           <span>browse the problems</span>
         </div>
         <div class="corpus-cards">
@@ -84,16 +65,13 @@ const stats = await datasetStats();
 
       <section class="landing-section">
         <div class="section-title">
-          <span class="section-title-num">03</span>
+          <span class="section-title-num">02</span>
           <span>for reviewers</span>
         </div>
         <p class="landing-text">
-          This site doubles as the review surface for collaborating PPL experts:
-          every problem page shows the statement, both realizations, and the full
-          verification evidence, and takes feedback directly — see the
-          <a href="/reviewing/">reviewing guide</a>. Recent changes are on the
-          <a href="/updates/">updates</a> page; the corpus and harness live at
-          <a href="https://github.com/shepardxia/ppl-gym">shepardxia/ppl-gym</a>.
+          Every problem page shows the statement, both realizations, and the full
+          verification evidence — and takes feedback directly.
+          <a href="/reviewing/">Reviewing guide →</a>
         </p>
       </section>
     </main>

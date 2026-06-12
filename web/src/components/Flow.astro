@@ -1,0 +1,27 @@
+---
+// Box-and-arrow flow diagram, pure HTML/CSS (themed, responsive).
+interface Step {
+  t: string;       // node title
+  s?: string;      // sub-label
+  tone?: string;   // optional: 'good' | 'accent'
+}
+interface Props {
+  steps: Step[];
+  label?: string;  // optional caption under the diagram
+}
+const { steps, label } = Astro.props;
+---
+<figure class="flow-fig">
+  <div class="flow">
+    {steps.map((step, i) => (
+      <Fragment>
+        {i > 0 && <span class="flow-arrow" aria-hidden="true">→</span>}
+        <div class={`flow-node${step.tone ? ` flow-${step.tone}` : ''}`}>
+          <span class="flow-t" set:html={step.t} />
+          {step.s && <span class="flow-s" set:html={step.s} />}
+        </div>
+      </Fragment>
+    ))}
+  </div>
+  {label && <figcaption class="flow-cap">{label}</figcaption>}
+</figure>

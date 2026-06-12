@@ -1,9 +1,49 @@
 ---
 import DocsLayout from '@/layouts/DocsLayout.astro';
-import { Content } from '@/docs/methodology.md';
+import Flow from '@/components/Flow.astro';
 
 export const prerender = true;
 ---
 <DocsLayout title="Methodology">
-  <Content />
+  <p class="docs-lead">
+    How problems are built and verified. Full contract:
+    <a href="https://github.com/shepardxia/ppl-gym/blob/main/data/SCHEMA.md"><code>data/SCHEMA.md</code></a>.
+  </p>
+
+  <Flow steps={[
+    { t: 'textbook sources', s: 'probmods · dippl · forest' },
+    { t: 'problem statement', s: 'given / model / query<br/>+ typed answer spec' },
+    { t: 'realizations', s: 'WebPPL · Pyro' },
+    { t: 'two gates', s: 'solver re-derivation<br/>cross-language' },
+    { t: 'verified dataset', s: '115 problems', tone: 'good' },
+  ]} label="Statements are language-neutral prose that pin the answer — never the program. A ground truth ships only after surviving both gates." />
+
+  <h2>Tolerance — measured, never authored</h2>
+  <Flow steps={[
+    { t: 'ground truth', s: 'k seeded runs' },
+    { t: 'noise floor', s: 'max pairwise distance' },
+    { t: 'tolerance', s: 'margin × floor' },
+  ]} label="No hand-set thresholds anywhere. Deterministic problems demand near-exact answers; stochastic ones get exactly the slack their own noise justifies." />
+
+  <h2>Gate 1 — solver re-derivation</h2>
+  <Flow steps={[
+    { t: 'rendered statement', s: 'prose only — no code shown' },
+    { t: 'independent solvers', s: '2 × LLM' },
+    { t: 'judged vs ground truth', s: 'within measured tolerance' },
+    { t: 'accept', tone: 'good' },
+  ]} label="Solvers agreeing with each other but not the GT marks the GT suspect — investigated to a measured root cause before anything changes." />
+
+  <h2>Gate 2 — cross-language consistency</h2>
+  <Flow steps={[
+    { t: 'WebPPL GT', s: 'k seeded runs' },
+    { t: 'agree within margin × max(floors)', s: '+ mechanical audit: model must use the language’s own machinery' },
+    { t: 'Pyro GT', s: 'k seeded runs' },
+  ]} label="Stronger than solver consensus, which shares the GT's blind spots — this gate caught a biased, already-accepted WebPPL ground truth." />
+
+  <h2>Provenance</h2>
+  <p>
+    Ground truth matching its textbook source is authoritative; statements are
+    the rewritable layer. Source overrides require documented evidence of internal
+    inconsistency. Retired problems are parked with reasons, never deleted.
+  </p>
 </DocsLayout>
