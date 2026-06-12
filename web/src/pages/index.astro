@@ -39,7 +39,7 @@ const legacy = await loadAllCollections();
     </section>
 
     <figure class="land-fig">
-      <svg viewBox="0 0 880 300" role="img" aria-label="One problem statement, programs in several PPLs, one shared answer space">
+      <svg viewBox="0 0 900 310" role="img" aria-label="One problem statement; programs in several PPLs; outputs become objects in a Python intermediate representation, compared against the stored ground-truth answer">
         <defs>
           <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
             <path d="M0,0 L8,4 L0,8 z" fill="var(--fg-faint)" />
@@ -47,67 +47,73 @@ const legacy = await loadAllCollections();
         </defs>
 
         <!-- statement -->
-        <rect x="16" y="86" width="186" height="124" rx="8" fill="var(--bg-elev)" stroke="var(--border-strong)" />
-        <text x="32" y="112" font-family="var(--font-mono)" font-size="12" fill="var(--fg)">problem statement</text>
-        <g stroke="var(--fg-faint)" stroke-width="3" stroke-linecap="round" opacity="0.55">
-          <line x1="32" y1="130" x2="184" y2="130" />
-          <line x1="32" y1="144" x2="170" y2="144" />
-          <line x1="32" y1="158" x2="184" y2="158" />
-          <line x1="32" y1="172" x2="150" y2="172" />
-          <line x1="32" y1="186" x2="176" y2="186" />
+        <rect x="14" y="92" width="178" height="124" rx="8" fill="var(--bg-elev)" stroke="var(--border-strong)" />
+        <text x="30" y="118" font-family="var(--font-mono)" font-size="12" fill="var(--fg)">problem statement</text>
+        <g stroke="var(--fg-faint)" stroke-width="3" stroke-linecap="round" opacity="0.5">
+          <line x1="30" y1="136" x2="174" y2="136" />
+          <line x1="30" y1="150" x2="160" y2="150" />
+          <line x1="30" y1="164" x2="174" y2="164" />
+          <line x1="30" y1="178" x2="142" y2="178" />
+          <line x1="30" y1="192" x2="166" y2="192" />
         </g>
 
-        <!-- programs -->
-        <g font-family="var(--font-mono)" font-size="12">
-          <rect x="296" y="22" width="168" height="68" rx="8" fill="var(--bg-elev)" stroke="var(--border)" />
-          <text x="310" y="44" fill="var(--fg)">WebPPL program</text>
-          <g stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
-            <line x1="310" y1="58" x2="430" y2="58" /><line x1="310" y1="70" x2="396" y2="70" />
-          </g>
+        <!-- programs: real syntax -->
+        <g font-family="var(--font-mono)">
+          <rect x="276" y="22" width="196" height="70" rx="8" fill="var(--bg-elev)" stroke="var(--border)" />
+          <text x="290" y="44" font-size="12" fill="var(--fg)">WebPPL</text>
+          <text x="290" y="62" font-size="11" fill="var(--accent)">var x = flip(0.3)</text>
+          <text x="290" y="78" font-size="11" fill="var(--accent)">Infer({'{'}…{'}'})</text>
 
-          <rect x="296" y="116" width="168" height="68" rx="8" fill="var(--bg-elev)" stroke="var(--border)" />
-          <text x="310" y="138" fill="var(--fg)">Pyro program</text>
-          <g stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
-            <line x1="310" y1="152" x2="412" y2="152" /><line x1="310" y1="164" x2="436" y2="164" />
-          </g>
+          <rect x="276" y="120" width="196" height="70" rx="8" fill="var(--bg-elev)" stroke="var(--border)" />
+          <text x="290" y="142" font-size="12" fill="var(--fg)">Pyro</text>
+          <text x="290" y="160" font-size="11" fill="var(--accent)">pyro.sample("x", …)</text>
+          <text x="290" y="176" font-size="11" fill="var(--accent)">EmpiricalMarginal(post)</text>
 
-          <rect x="296" y="210" width="168" height="68" rx="8" fill="var(--bg-elev)" stroke="var(--border)" stroke-dasharray="4 4" />
-          <text x="310" y="232" fill="var(--fg-dim)">any other PPL</text>
-          <g stroke="var(--fg-faint)" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
-            <line x1="310" y1="246" x2="420" y2="246" /><line x1="310" y1="258" x2="388" y2="258" />
-          </g>
+          <rect x="276" y="218" width="196" height="70" rx="8" fill="var(--bg-elev)" stroke="var(--border)" stroke-dasharray="4 4" />
+          <text x="290" y="240" font-size="12" fill="var(--fg-dim)">any other PPL</text>
+          <text x="290" y="260" font-size="11" fill="var(--fg-faint)">…</text>
         </g>
 
         <!-- statement -> programs -->
         <g stroke="var(--fg-faint)" stroke-width="1.4" fill="none" marker-end="url(#arr)">
-          <path d="M206,128 C 248,110 252,72 290,58" />
-          <path d="M206,148 L 290,149" />
-          <path d="M206,170 C 248,188 252,226 290,242" />
+          <path d="M196,132 C 236,114 234,76 270,60" />
+          <path d="M196,154 L 270,155" />
+          <path d="M196,178 C 236,196 234,236 270,251" />
         </g>
 
-        <!-- shared answer space -->
-        <rect x="556" y="40" width="120" height="220" rx="12" fill="var(--accent-bg)" stroke="var(--accent)" stroke-dasharray="5 4" />
-        <text x="616" y="130" font-family="var(--font-mono)" font-size="12" fill="var(--accent)" text-anchor="middle" transform="rotate(-90 616 150)">shared answer space</text>
+        <!-- intermediate representation: a region; the GT answer lives inside -->
+        <rect x="556" y="26" width="330" height="262" rx="14" fill="var(--accent-bg)" stroke="var(--accent)" stroke-dasharray="6 5" />
+        <text x="574" y="52" font-family="var(--font-mono)" font-size="12" fill="var(--accent)">intermediate representation · python</text>
 
-        <!-- programs -> space -->
-        <g stroke="var(--fg-faint)" stroke-width="1.4" fill="none" marker-end="url(#arr)">
-          <path d="M468,56 C 510,68 514,108 550,122" />
-          <path d="M468,150 L 550,150" />
-          <path d="M468,244 C 510,232 514,192 550,178" />
-        </g>
-
-        <!-- one answer -->
+        <!-- stored ground-truth answer: filled bars -->
         <g>
-          <rect x="724" y="92" width="140" height="116" rx="8" fill="var(--bg-elev)" stroke="var(--border-strong)" />
           <g fill="var(--accent)">
-            <rect x="744" y="148" width="18" height="44" rx="2" />
-            <rect x="772" y="120" width="18" height="72" rx="2" />
-            <rect x="800" y="164" width="18" height="28" rx="2" />
-            <rect x="828" y="172" width="18" height="20" rx="2" />
+            <rect x="640" y="170" width="22" height="66" rx="2" />
+            <rect x="674" y="128" width="22" height="108" rx="2" />
+            <rect x="708" y="192" width="22" height="44" rx="2" />
+            <rect x="742" y="206" width="22" height="30" rx="2" />
           </g>
-          <text x="794" y="116" font-family="var(--font-mono)" font-size="12" fill="var(--fg)" text-anchor="middle">one answer</text>
+          <line x1="624" y1="236" x2="800" y2="236" stroke="var(--border-strong)" stroke-width="1" />
+          <text x="712" y="258" font-family="var(--font-mono)" font-size="11.5" fill="var(--fg-dim)" text-anchor="middle">stored ground-truth answer</text>
+
+          <!-- incoming answers land exactly on the stored bars -->
+          <g fill="none" stroke="var(--fg)" stroke-width="1.6">
+            <circle cx="651" cy="170" r="5" /><circle cx="685" cy="128" r="5" />
+            <circle cx="719" cy="192" r="5" /><circle cx="753" cy="206" r="5" />
+          </g>
+          <g fill="none" stroke="var(--fg)" stroke-width="1.6" transform="translate(0,0)">
+            <path d="M645,158 l6,-8 l6,8 z" /><path d="M679,116 l6,-8 l6,8 z" />
+            <path d="M713,180 l6,-8 l6,8 z" /><path d="M747,194 l6,-8 l6,8 z" />
+          </g>
+          <text x="712" y="92" font-family="var(--font-mono)" font-size="11.5" fill="var(--fg-mid)" text-anchor="middle">○ △ each program's answer, on the same bars</text>
         </g>
-        <path d="M680,150 L 718,150" stroke="var(--fg-faint)" stroke-width="1.4" fill="none" marker-end="url(#arr)" />
+
+        <!-- programs -> into the IR, at the answer -->
+        <g stroke="var(--fg-faint)" stroke-width="1.4" fill="none" marker-end="url(#arr)">
+          <path d="M476,57 C 530,70 560,110 620,142" />
+          <path d="M476,155 C 520,158 570,170 616,182" />
+          <path d="M476,253 C 530,240 560,216 618,204" />
+        </g>
       </svg>
     </figure>
 
