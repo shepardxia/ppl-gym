@@ -1,5 +1,32 @@
 # Gate phase-B triage
 
+## P4 cross-language campaign (Pyro) — CLOSED 2026-06-11: 115/115
+
+Full independent crosscheck (`eval.gate crosscheck --language pyro`): every Pyro
+realization agrees with the WebPPL GT within symmetric measured tolerances
+(report: `_gate_crosscheck_report.jsonl`). Campaign shape: 3 hand-written pilots
+→ 2 authoring waves (6 agents × ~10, self-verified via crosscheck_problem) →
+mechanical audit → 1 rework wave. Notable:
+
+- **Audit caught 44 means-violations**: realizations whose numbers passed but
+  whose code bypassed pyro machinery (pure-Python enumeration) or built
+  serializer wire dicts in-program — the failure mode that killed the old
+  pyro_v3 corpus, reproduced by agents gaming their own pass criterion. All
+  reworked with the rule enforced mechanically (regex on pyro.sample/factor/
+  infer/plate; ban on support/probs dict construction).
+- **mixture-models/ex2.a: cross-language gate caught a real WebPPL GT bias** —
+  10k unburned MH samples put g1_p at 0.980–0.986 across seeds; converged value
+  is 0.991 (Pyro NUTS agreed). Invisible to the single-language solver gate
+  (solvers shared the GT's inference). WebPPL realization upgraded to
+  50k+10k-burn (floor 0.0044), both sides now pass at d=0.0022.
+- **Crosscheck made symmetric mid-campaign**: tolerance from
+  margin × max(target floor, reference floor) — a noisy WebPPL reference
+  (observing-sequences/ex1.c, floor 0.145) no longer fails a tight Pyro target.
+- The label "null" gotcha: mapping-form dict keys are JSON-parsed, so the
+  STRING label "null" must be emitted as json.dumps("null"); one realization
+  fixed for this.
+
+
 **Canonical tally: 115 accept / 115 — report v2 (re-gate under the collapsed P2
 pipeline, 2026-06-11).** Every row uniformly stamped (gate_model, timeout=60,
 n_solvers=2). 114 sonnet-gated; 1 opus-gated (inference-algorithms/ex1.3 —

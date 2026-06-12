@@ -8,7 +8,7 @@ interface Props {
   record: ProblemRecord;
 }
 const { record } = Astro.props;
-const { problem, realization, gateA, gateB } = record;
+const { problem, realization, pyroRealization, gateA, gateB } = record;
 
 const chip     = specChip(problem.answer_spec);
 const toneA    = statusTone(gateA?.status);
@@ -17,6 +17,7 @@ const toneR    = statusTone(problem.status.review);
 
 const specJson = JSON.stringify(problem.answer_spec, null, 2);
 const codeHtml = realization?.code ? renderCode(realization.code, 'webppl') : null;
+const pyroCodeHtml = pyroRealization?.code ? renderCode(pyroRealization.code, 'python') : null;
 
 function fmtDist(arr: unknown[] | undefined): string {
   if (!arr || arr.length === 0) return '—';
@@ -106,6 +107,16 @@ function fmtNum(v: number | undefined): string {
       <p class="pd-empty">No realization available.</p>
     )}
   </section>
+
+  {pyroRealization && (
+    <section class="pd-section">
+      <div class="section-title">
+        <span class="section-title-num">04</span>
+        <span>Pyro realization</span>
+      </div>
+      <Fragment set:html={pyroCodeHtml} />
+    </section>
+  )}
 
   <!-- ── Gate panel ─────────────────────────────────────────────────────── -->
   <section class="pd-section">

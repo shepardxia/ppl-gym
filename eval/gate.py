@@ -804,13 +804,16 @@ def crosscheck_problem(
     k_draws: int = _DEFAULT_K_DRAWS,
     timeout: int = DEFAULT_TIMEOUT,
     workers: int = DEFAULT_MC_WORKERS,
+    margin: float = 2.0,
 ) -> dict:
     """Judge the reference-language GT against k target-language GT runs.
 
-    The target's own multi-seed noise floor sets the tolerance, so a sampled
-    target realization (e.g. Pyro importance sampling) is comparable against
-    an exact reference (e.g. WebPPL enumeration). Statuses mirror judge():
-    pass / fail / ill_posed (target floor exceeds caps) / error.
+    Symmetric: k seeded GT runs are collected from BOTH languages; the
+    tolerance comes from the larger of the two measured noise floors, so a
+    sampled realization on either side is comparable against an exact one on
+    the other. The reference's median run is judged against the target's runs
+    with the symmetric tolerance. Statuses mirror judge(): pass / fail /
+    ill_posed (either side's floor exceeds its discriminability cap) / error.
     """
     pid = problem["problem_id"]
     t0 = time.time()
@@ -819,43 +822,49 @@ def crosscheck_problem(
     except (AlgebraError, KeyError, TypeError) as exc:
         return {"problem_id": pid, "status": "error", "error": f"bad spec: {exc}"}
 
-    try:
-        target_gts, _ = collect_gt_answers(
-            target_real["code"], spec,
-            base_seed=base_seed, n_draws=n_draws,
-            k_exact=k_exact, k_draws=k_draws,
-            timeout=timeout, workers=workers, executor=target_executor,
-        )
-    except (RuntimeError, AlgebraError) as exc:
-        return {"problem_id": pid, "status": "error",
-                "error": f"target GT failed: {exc}",
-                "runtime_sec": round(time.time() - t0, 3)}
+    sides = {}
+    for name, real, executor in (
+        ("target", target_real, target_executor),
+        ("reference", reference_real, reference_executor),
+    ):
+        try:
+            gts, _ = collect_gt_answers(
+                real["code"], spec,
+                base_seed=base_seed, n_draws=n_draws,
+                k_exact=k_exact, k_draws=k_draws,
+                timeout=timeout, workers=workers, executor=executor,
+            )
+            sides[name] = gts
+        except (RuntimeError, AlgebraError) as exc:
+            return {"problem_id": pid, "status": "error",
+                    "error": f"{name} GT failed: {exc}",
+                    "runtime_sec": round(time.time() - t0, 3)}
 
     try:
-        ref_canon = execute_candidate_answer(
-            reference_real["code"], spec,
-            base_seed=base_seed, n_draws=n_draws,
-            timeout=timeout, workers=workers, executor=reference_executor,
-        )
-    except (RuntimeError, AlgebraError) as exc:
-        return {"problem_id": pid, "status": "error",
-                "error": f"reference GT failed: {exc}",
-                "runtime_sec": round(time.time() - t0, 3)}
-
-    try:
-        v = verdict(ref_canon, target_gts, spec)
+        target_floor = noise_floor(sides["target"], spec)
+        ref_floor = noise_floor(sides["reference"], spec)
+        # Judge each reference run against the target runs; take the median
+        # verdict by distance. The per-side floors enter symmetrically.
+        vs = [verdict(rc, sides["target"], spec, margin) for rc in sides["reference"]]
+        vs.sort(key=lambda v: v["distance"])
+        v = vs[len(vs) // 2]
     except AlgebraError as exc:
         return {"problem_id": pid, "status": "error",
                 "error": f"verdict failed: {exc}",
                 "runtime_sec": round(time.time() - t0, 3)}
 
-    from eval.algebra import status_of
+    # Symmetric tolerance: margin x max(both floors), with verdict's eps floor
+    # (v["tol"] already carries margin x target_floor and the metric's eps).
+    sym_tol = max(margin * max(target_floor, ref_floor), v["tol"])
+    passed = v["distance"] <= sym_tol and not v.get("ill_posed")
+    status = "ill_posed" if v.get("ill_posed") else ("pass" if passed else "fail")
     return {
         "problem_id": pid,
-        "status": status_of(v),
+        "status": status,
         "distance": round(v["distance"], 6),
-        "tol": v["tol"],
-        "target_floor": round(v["floor"], 6),
+        "tol": sym_tol,
+        "target_floor": round(target_floor, 6),
+        "reference_floor": round(ref_floor, 6),
         "metric": v["metric"],
         "runtime_sec": round(time.time() - t0, 3),
     }

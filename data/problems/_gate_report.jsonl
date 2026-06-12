@@ -94,7 +94,7 @@
 {"problem_id": "probmods2-learning-as-conditional-inference/ex2.2", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.00195, "metric": "absdiff", "runtime_sec": 1.384}
 {"problem_id": "probmods2-mixture-models/ex1.a", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.067585, "metric": "record", "runtime_sec": 2.054}
 {"problem_id": "probmods2-mixture-models/ex1.b", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.048167, "metric": "record", "runtime_sec": 3.139}
-{"problem_id": "probmods2-mixture-models/ex2.a", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.015106, "metric": "record", "runtime_sec": 1.294}
+{"problem_id": "probmods2-mixture-models/ex2.a", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.004406, "metric": "record", "runtime_sec": 12.019}
 {"problem_id": "probmods2-observing-sequences/ex1.a", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.04606, "metric": "tv", "runtime_sec": 1.855}
 {"problem_id": "probmods2-observing-sequences/ex1.b", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.0997, "metric": "tv", "runtime_sec": 2.317}
 {"problem_id": "probmods2-observing-sequences/ex1.c", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.1445, "metric": "tv", "runtime_sec": 2.501}

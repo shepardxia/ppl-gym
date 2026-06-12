@@ -73,6 +73,7 @@ export interface GatePhaseB {
 export interface ProblemRecord {
   problem: Problem;
   realization: Realization | null;
+  pyroRealization: Realization | null;
   gateA: GatePhaseA | null;
   gateB: GatePhaseB | null;
   corpus: 'probmods2' | 'dippl' | 'forestdb';
@@ -110,8 +111,9 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
 
 
   // Read all four files in parallel.
-  const [realizations, gateARows, gateBRows, ...corpusRows] = await Promise.all([
+  const [realizations, pyroRealizations, gateARows, gateBRows, ...corpusRows] = await Promise.all([
     readJsonl<Realization>(join(DATA_DIR, 'realizations', 'webppl.jsonl')),
+    readJsonl<Realization>(join(DATA_DIR, 'realizations', 'pyro.jsonl')),
     readJsonl<GatePhaseA>(join(DATA_DIR, 'problems', '_gate_report.jsonl')),
     readJsonl<GatePhaseB>(join(DATA_DIR, 'problems', '_gate_solver_report.jsonl')),
     ...CORPORA.map((c) => readJsonl<Problem>(join(DATA_DIR, 'problems', `${c}.jsonl`))),
@@ -120,6 +122,8 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
   // Index by problem_id for O(1) joins.
   const realizationByPid = new Map<string, Realization>();
   for (const r of realizations) realizationByPid.set(r.problem_id, r);
+  const pyroByPid = new Map<string, Realization>();
+  for (const r of pyroRealizations) pyroByPid.set(r.problem_id, r);
 
   const gateAByPid = new Map<string, GatePhaseA>();
   for (const r of gateARows) gateAByPid.set(r.problem_id, r);
@@ -138,6 +142,7 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
         problem,
         corpus,
         realization: realizationByPid.get(problem.problem_id) ?? null,
+        pyroRealization: pyroByPid.get(problem.problem_id) ?? null,
         gateA: gateAByPid.get(problem.problem_id) ?? null,
         gateB: gateBByPid.get(problem.problem_id) ?? null,
       });

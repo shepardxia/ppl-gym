@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`ppl-gym` (the working name; the GitHub repo is `shepardxia/ppl-gym`) is a benchmark dataset of probabilistic-programming **problems**: language-neutral statements with per-language ground-truth realizations, used to evaluate LLMs on probabilistic programming. The canonical corpus is 115 WebPPL-realized problems (`data/problems/{probmods2,dippl,forestdb}.jsonl` + `data/realizations/webppl.jsonl`, 1:1). Planned columns: Pyro (P4 rebuild), Stan (P5), memo/pluck (with the language creators).
+`ppl-gym` (the working name; the GitHub repo is `shepardxia/ppl-gym`) is a benchmark dataset of probabilistic-programming **problems**: language-neutral statements with per-language ground-truth realizations, used to evaluate LLMs on probabilistic programming. The canonical corpus is 115 problems (`data/problems/{probmods2,dippl,forestdb}.jsonl`) with two verified realization columns: WebPPL (`data/realizations/webppl.jsonl`) and Pyro (`data/realizations/pyro.jsonl`, 115/115 crosscheck-verified against WebPPL GT). Planned: Stan (P5), memo/pluck (with the language creators).
 
 Two halves:
 
@@ -13,11 +13,11 @@ Two halves:
 
 ## The contract (read first)
 
-- **`data/SCHEMA.md` is the contract** (problem/realization records, answer algebra, measured tolerance, gate). `data/REDESIGN.md` is the rationale + phase history. P0–P3 done (incl. the P2 harness collapse); **P4 (Pyro rebuild) is next**.
+- **`data/SCHEMA.md` is the contract** (problem/realization records, answer algebra, measured tolerance, gate). `data/REDESIGN.md` is the rationale + phase history. P0–P4 done (P2 harness collapse; P4 Pyro column, crosscheck-verified); **P5 (Stan) is next**.
 - A problem = `{problem_id, provenance, statement{given,model,query}, answer_spec, status}`. The statement must pin the answer, never the program (determination criterion). Prompts are **rendered**: statement + spec-derived harness-contract paragraph via `eval/render.py:render_problem` — wire formats never appear in prompts.
 - `eval/algebra.py` is the only comparator: answer = Value/Dist/Record over domains bool/finite/int/real/realvec; representations (exact/enumerated/parametric/cloud) orthogonal; tolerance measured (GT noise floor + candidate split-half self-noise), never authored. Entry points: `judge()` (candidate vs GTs), `agreement()` (candidate vs candidate). Finite specs may declare `support` — the label *space* (incl. zero-prob labels; never the realized support, that leaks the answer); the renderer enumerates it and the canonicalizer rejects out-of-space mass as malformed.
 - Gate (`eval/gate.py`): `phaseA` (multi-seed GT floors) / `solve` (render + submit solver batch; `--model` to escalate; `--dry-run` writes a `.dry.json` sidecar) / `judge` (execute solver code, classify accept/gt_suspect/underdetermined/solver_failure, stamp gate_model/timeout/n_solvers). Both report writers merge by problem_id — partial re-runs never clobber other rows. Campaign result (report v2, re-gated under the collapsed pipeline): 115/115 solver-verified, uniformly stamped, 1 opus-gated row — history in `data/problems/_gate_triage.md`. Retired problems: `data/problems/_retired.jsonl`; authoring rules incl. hard bans: `data/problems/_AUTHORING_BRIEF.md`.
-- **Do not build on `data/pyro_v3/`** until P4 re-derives it: 33/40 GTs are plain Python (not Pyro), 31/40 prompts leak the serializer wire format, and `eval/executor_pyro.py` is unseeded (`PPL_GYM_PYRO_SEED` is set but nothing reads it — same seed gives different outputs).
+- `data/pyro_v3/` is the dead pre-P4 Pyro attempt (plain-Python GTs, wire-format prompts) — archival only; the live column is `data/realizations/pyro.jsonl`. A realization must express its model via the language's own machinery (e.g. `pyro.sample`/`pyro.infer`) — audit this mechanically; agents WILL hand back plain-Python lookalikes whose numbers pass.
 - Legacy atom JSONLs (`data/atomized_v2.jsonl`, `data/curated_v3/*`, `data/eval_runs/*`) are archives; the eval pipeline and web app no longer read them (only the legacy curation scripts below still target the atom format).
 
 ## Python toolchain
@@ -54,6 +54,9 @@ PYTHONPATH=. .venv/bin/python -m eval.score \
 PYTHONPATH=. .venv/bin/python -m eval.gate phaseA [--ids ...]
 PYTHONPATH=. .venv/bin/python -m eval.gate solve --ids ... --model claude-opus-4-8 --manifest <path>
 PYTHONPATH=. .venv/bin/python -m eval.gate judge --manifest <path> [--report <path>]
+
+# Cross-language consistency (target column vs reference GT, symmetric tolerances)
+PYTHONPATH=. .venv/bin/python -m eval.gate crosscheck --language pyro [--ids ...]
 ```
 
 `eval.config` defaults: `seed=42`, `n_mc=200`, `mc_workers=8`, `timeout=60`. Workers multiply across levels (problem-level × per-seed); both score and gate clamp so WebPPL process count stays bounded.
