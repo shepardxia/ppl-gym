@@ -308,6 +308,84 @@ def execute_pyro(code: str, timeout: int = 30, random_seed: int | None = None) -
         os.unlink(tmp_path)
 
 
+# ---------------------------------------------------------------------------
+# Batched execution: run many seeds in ONE subprocess (one torch import).
+# ---------------------------------------------------------------------------
+
+# Driver appended after SERIALIZER_HEADER. Runs the user program once per seed,
+# reseeding + clearing the param store + using a FRESH namespace each time, so an
+# in-process iteration reproduces a fresh-process-per-seed run exactly. Emits a
+# JSON list of serialized answers (sentinel dict for a per-seed failure).
+_BATCH_DRIVER = '''
+__base_globals = dict(globals())
+__results = []
+for __seed in __SEEDS:
+    try:
+        pyro.set_rng_seed(int(__seed))
+        pyro.clear_param_store()
+        __ns = dict(__base_globals)
+        exec(__USER_SRC, __ns)
+        if "ANSWER" not in __ns:
+            __results.append({"__pplgym_error__": "program did not define ANSWER"})
+        else:
+            __results.append(_serialize(__ns["ANSWER"]))
+    except Exception as __e:
+        __results.append({"__pplgym_error__": repr(__e)})
+sys.stdout.write(json.dumps(__results))
+'''
+
+
+def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1) -> list:
+    """Run ``code`` once per seed in a single subprocess (one torch import).
+
+    Returns a list aligned with ``seeds``: each entry is the parsed answer for
+    that seed, or ``None`` if that seed failed.  ``workers`` is accepted for
+    interface symmetry with the WebPPL batch executor and ignored (one process).
+    In-process reseed (set_rng_seed + clear_param_store + fresh namespace per
+    iteration) reproduces fresh-process-per-seed output exactly.
+    """
+    seeds = list(seeds)
+    if not seeds:
+        return []
+    program = (
+        SERIALIZER_HEADER + "\n"
+        + "__USER_SRC = " + repr(code) + "\n"
+        + "__SEEDS = " + repr(seeds) + "\n"
+        + _BATCH_DRIVER
+    )
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        f.write(program)
+        tmp_path = f.name
+    try:
+        try:
+            proc = subprocess.run(
+                [str(_VENV_PY), tmp_path],
+                capture_output=True, text=True, timeout=timeout,
+                env={**os.environ},
+            )
+        except subprocess.TimeoutExpired:
+            return [None] * len(seeds)
+        if proc.returncode != 0:
+            return [None] * len(seeds)
+        stdout = proc.stdout.strip()
+        try:
+            raw = json.loads(stdout)
+        except json.JSONDecodeError:
+            last = next((ln for ln in reversed(stdout.split("\n")) if ln.strip()), "")
+            try:
+                raw = json.loads(last)
+            except json.JSONDecodeError:
+                return [None] * len(seeds)
+        if not isinstance(raw, list) or len(raw) != len(seeds):
+            return [None] * len(seeds)
+        return [
+            None if (isinstance(a, dict) and "__pplgym_error__" in a) else a
+            for a in raw
+        ]
+    finally:
+        os.unlink(tmp_path)
+
+
 def _extract_error(text: str) -> str:
     text = re.sub(r"\x1b\[[0-9;]*m", "", text)
     # Python tracebacks: last "...Error: ..." line is the cause.

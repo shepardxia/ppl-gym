@@ -20,3 +20,6 @@ data/sources/
 data/eval_runs/*/*.pre-output-bak
 node_modules/
 .astro/
+
+# GT execution cache (content-addressed; regenerable)
+data/.gt_cache/

@@ -187,6 +187,33 @@ def execute_webppl(code: str, timeout: int = 30, random_seed: int | None = None)
         os.unlink(tmp_path)
 
 
+def execute_webppl_batch(code: str, seeds, timeout: int = 30, workers: int = 8) -> list:
+    """Run ``code`` once per seed, returning answers aligned with ``seeds``.
+
+    WebPPL seeds its RNG from a process-start env override, so it cannot reseed
+    in-process — this is per-seed spawning under the batch interface (same seeds,
+    byte-identical to calling execute_webppl per seed), parallelized across
+    ``workers`` threads. The amortization win for fixed reference GTs comes from
+    caching (eval/gt_cache), not from batching webppl.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    seeds = list(seeds)
+    if not seeds:
+        return []
+    results: list = [None] * len(seeds)
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futs = {
+            pool.submit(execute_webppl, code, timeout=timeout, random_seed=s): i
+            for i, s in enumerate(seeds)
+        }
+        for fut in futs:
+            i = futs[fut]
+            r = fut.result()
+            results[i] = r.answer if r.success else None
+    return results
+
+
 def _extract_error(text: str) -> str:
     text = re.sub(r"\x1b\[[0-9;]*m", "", text)
     for line in text.split("\n"):

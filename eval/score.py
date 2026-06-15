@@ -34,7 +34,7 @@ from threading import Event, Lock
 
 from eval.algebra import AlgebraError, parse_spec, status_of, verdict
 from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
-from eval.corpus import executor_for, load_corpus
+from eval.corpus import load_corpus
 from eval.gate import (
     collect_gt_answers,
     code_jaccard,
@@ -54,7 +54,7 @@ def _score_one(
     workers: int,
     gt_cache: dict,
     gt_cache_lock: Lock,
-    executor,
+    language: str,
 ) -> dict:
     """Score one generation row. Returns the row dict augmented with result fields."""
     t0 = time.time()
@@ -97,11 +97,11 @@ def _score_one(
             entry["gts"], _ = collect_gt_answers(
                 realization["code"],
                 spec,
+                language=language,
                 base_seed=seed,
                 n_draws=n_draws,
                 timeout=timeout,
                 workers=workers,
-                executor=executor,
             )
         except (RuntimeError, AlgebraError) as exc:
             entry["error"] = f"GT collection failed: {exc}"
@@ -122,11 +122,11 @@ def _score_one(
         canon = execute_candidate_answer(
             code,
             spec,
+            language=language,
             base_seed=seed,
             n_draws=n_draws,
             timeout=timeout,
             workers=workers,
-            executor=executor,
         )
     except AlgebraError as exc:
         return _error_row("malformed", str(exc))
@@ -170,7 +170,6 @@ def run_scoring(
 
     Returns the summary dict.
     """
-    executor = executor_for(language)
     rows = [r for r in load_jsonl(generations_path) if not r.get("summary")]
 
     # Optionally filter by problem_id
@@ -225,7 +224,7 @@ def run_scoring(
             workers=mc_workers,
             gt_cache=gt_cache,
             gt_cache_lock=gt_cache_lock,
-            executor=executor,
+            language=language,
         )
 
     with open(output_path, "w") as out_f:

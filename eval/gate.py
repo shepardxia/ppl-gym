@@ -39,8 +39,8 @@ from eval.algebra import (
     verdict,
 )
 from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
-from eval.corpus import executor_for, load_corpus, load_problems
-from eval.executor import execute_webppl
+from eval.corpus import load_corpus, load_problems
+from eval.gt_cache import cached_run
 from eval.generate_batch import (
     build_requests,
     cid_to_problem_slot,
@@ -107,114 +107,57 @@ _DEFAULT_REPORT = Path("data/problems/_gate_report.jsonl")
 # GT answer collection (reusable by Phase B)
 # ---------------------------------------------------------------------------
 
-def _run_single(code: str, seed: int, timeout: int, executor) -> object:
-    """Execute code once; return the raw answer or raise RuntimeError on failure."""
-    r = executor(code, timeout=timeout, random_seed=seed)
-    if not r.success:
-        raise RuntimeError(r.error_message or "execution failed")
-    return r.answer
-
-
-def _run_block(
-    code: str,
-    base_seed: int,
-    n: int,
-    timeout: int,
-    workers: int,
-    executor,
-) -> list:
-    """Run code at seeds base_seed..base_seed+n-1 in parallel; collect raw answers.
-
-    Returns the list of raw answers (None entries removed).  Raises RuntimeError
-    if every run fails (the caller can treat partial success as an error or not,
-    depending on tolerance requirements).
-    """
-    answers: list = [None] * n
-    errors: list = [None] * n
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(executor, code, timeout=timeout, random_seed=base_seed + i): i
-            for i in range(n)
-        }
-        for fut in as_completed(futures):
-            i = futures[fut]
-            try:
-                r = fut.result()
-                if r.success:
-                    answers[i] = r.answer
-                else:
-                    errors[i] = r.error_message
-            except Exception as exc:
-                errors[i] = str(exc)
-    good = [a for a in answers if a is not None]
-    if not good:
-        first_err = next((e for e in errors if e), "all runs failed")
-        raise RuntimeError(first_err)
-    return good
-
-
 def collect_gt_answers(
     code: str,
     spec: Spec,
     *,
+    language: str = "webppl",
     base_seed: int = DEFAULT_SEED,
     n_draws: int = DEFAULT_N_MC,
     k_exact: int = _DEFAULT_K_EXACT,
     k_draws: int = _DEFAULT_K_DRAWS,
     timeout: int = DEFAULT_TIMEOUT,
     workers: int = DEFAULT_MC_WORKERS,
-    executor=execute_webppl,
+    use_cache: bool = True,
 ) -> tuple[list, int]:
     """Collect k independent canonical GT answers for (code, spec).
 
-    Returns (canonical_answers, n_runs_total).
+    Single path: every needed seed runs through the language's batched executor,
+    cached by content hash (eval.gt_cache). Returns (canonical_answers, n_runs).
 
     Draws protocol (spec has draws anywhere):
-      One GT answer = the collected list of n_draws seeded executions.
-      Seed block i uses base_seed + i*n_draws.  k = k_draws (default 3).
-      Total runs = k_draws * n_draws.
-
+      One GT answer = a block of n_draws seeded draws; k_draws blocks over
+      contiguous seeds base_seed .. base_seed + k_draws*n_draws - 1. A block
+      with at least one good draw is kept; an all-failed block raises.
     Non-draws (exact/enum/parametric):
-      One GT answer = one execution.
-      Seeds = base_seed, base_seed+1, ..., base_seed+k_exact-1.
-      Total runs = k_exact (default 5).
+      One GT answer = one run; seeds base_seed .. base_seed + k_exact - 1.
+      Any failed run raises RuntimeError (a healthy GT succeeds on every seed).
 
-    Each collected answer is canonicalized under the spec.  AlgebraError or
-    RuntimeError propagates to the caller; gate_problem() catches both.
+    AlgebraError (canonicalization) and RuntimeError propagate; gate_problem()
+    catches both.
     """
-    uses_draws = _has_draws_field(spec)
-
-    if uses_draws:
-        k = k_draws
+    if _has_draws_field(spec):
+        total = k_draws * n_draws
+        seeds = [base_seed + i for i in range(total)]
+        raw = cached_run(language, code, seeds, timeout=timeout,
+                         workers=workers, use_cache=use_cache)
         canonical: list = []
         n_runs = 0
-        for block in range(k):
-            block_base = base_seed + block * n_draws
-            raw_list = _run_block(
-                code, block_base, n_draws, timeout, workers, executor
-            )
-            n_runs += len(raw_list)
-            canonical.append(canonicalize(raw_list, spec))
+        for block in range(k_draws):
+            chunk = [a for a in raw[block * n_draws:(block + 1) * n_draws]
+                     if a is not None]
+            if not chunk:
+                raise RuntimeError("all runs failed")
+            n_runs += len(chunk)
+            canonical.append(canonicalize(chunk, spec))
         return canonical, n_runs
-    else:
-        k = k_exact
-        canonical = []
-        # Single-run seeds are executed individually (each is a separate task
-        # in the pool) so the thread pool stays fully busy.
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            future_to_idx = {
-                pool.submit(
-                    _run_single, code, base_seed + i, timeout, executor
-                ): i
-                for i in range(k)
-            }
-            results_raw: list = [None] * k
-            for fut in as_completed(future_to_idx):
-                idx = future_to_idx[fut]
-                results_raw[idx] = fut.result()  # propagates RuntimeError
-        for raw in results_raw:
-            canonical.append(canonicalize(raw, spec))
-        return canonical, k
+
+    seeds = [base_seed + i for i in range(k_exact)]
+    raw = cached_run(language, code, seeds, timeout=timeout,
+                     workers=workers, use_cache=use_cache)
+    if any(a is None for a in raw):
+        raise RuntimeError("execution failed")
+    return [canonicalize(a, spec) for a in raw], k_exact
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +174,7 @@ def gate_problem(
     k_draws: int = _DEFAULT_K_DRAWS,
     timeout: int = DEFAULT_TIMEOUT,
     workers: int = DEFAULT_MC_WORKERS,
-    executor=execute_webppl,
+    language: str = "webppl",
 ) -> dict:
     """Run the Phase-A gate for one (problem, realization) pair.
 
@@ -262,13 +205,13 @@ def gate_problem(
         gts, n_runs = collect_gt_answers(
             realization["code"],
             spec,
+            language=language,
             base_seed=base_seed,
             n_draws=n_draws,
             k_exact=k_exact,
             k_draws=k_draws,
             timeout=timeout,
             workers=workers,
-            executor=executor,
         )
     except (RuntimeError, AlgebraError) as exc:
         return {
@@ -438,19 +381,21 @@ def execute_candidate_answer(
     n_draws: int = DEFAULT_N_MC,
     timeout: int = DEFAULT_TIMEOUT,
     workers: int = DEFAULT_MC_WORKERS,
-    executor=execute_webppl,
+    language: str = "webppl",
 ) -> object:
     """Execute candidate code and return a canonical answer.
 
     The k=1 case of collect_gt_answers: draws-spec problems collect n_draws
     seeded runs into one canonical answer; others run once at base_seed.
+    Candidate (solver) code is one-off, so its runs are not cached.
     """
     answers, _ = collect_gt_answers(
         code, spec,
+        language=language,
         base_seed=base_seed, n_draws=n_draws,
         k_exact=1, k_draws=1,
         timeout=timeout, workers=workers,
-        executor=executor,
+        use_cache=False,
     )
     return answers[0]
 
@@ -468,7 +413,7 @@ def _judge_problem_b(
     timeout: int = DEFAULT_TIMEOUT,
     workers: int = DEFAULT_MC_WORKERS,
     stamp: dict | None = None,
-    executor=execute_webppl,
+    language: str = "webppl",
 ) -> dict:
     """Judge one problem: collect GTs, execute solvers, classify.
 
@@ -513,13 +458,13 @@ def _judge_problem_b(
         gts, _ = collect_gt_answers(
             realization["code"],
             spec,
+            language=language,
             base_seed=base_seed,
             n_draws=n_draws,
             k_exact=k_exact,
             k_draws=k_draws,
             timeout=timeout,
             workers=workers,
-            executor=executor,
         )
         gt_floor = noise_floor(gts, spec)
     except (RuntimeError, AlgebraError) as exc:
@@ -548,11 +493,11 @@ def _judge_problem_b(
         try:
             solver_canons[i] = execute_candidate_answer(
                 code, spec,
+                language=language,
                 base_seed=base_seed,
                 n_draws=n_draws,
                 timeout=timeout,
                 workers=workers,
-                executor=executor,
             )
         except (RuntimeError, AlgebraError) as exc:
             solver_exec_errors[i] = str(exc)
@@ -687,7 +632,6 @@ def cmd_judge(args) -> None:
 
     # Load problems and realizations for GT re-computation
     language = manifest.get("language", "webppl")
-    executor = executor_for(language)
     id_set = set(solver_codes_by_pid.keys()) if solver_codes_by_pid else None
     problems = load_problems(id_set)
     _, realizations_list = load_corpus(id_set, language=language)
@@ -718,7 +662,7 @@ def cmd_judge(args) -> None:
             timeout=args.timeout,
             workers=per_problem_workers,
             stamp=stamp,
-            executor=executor,
+            language=language,
         )
 
     reports = _map_problems(
@@ -796,7 +740,6 @@ _ANSWER_MAX_SAMPLES = 500
 def cmd_answers(args) -> None:
     """Collect one canonical GT answer per (problem, language) and merge-write
     data/problems/_gt_answers.jsonl (keyed by problem_id + language)."""
-    executor = executor_for(args.language)
     id_set = set(args.ids) if args.ids else None
     problems, reals = load_corpus(id_set, language=args.language)
     if not problems:
@@ -814,9 +757,9 @@ def cmd_answers(args) -> None:
             spec = parse_spec(prob["answer_spec"])
             canon = execute_candidate_answer(
                 real_by_id[pid]["code"], spec,
+                language=args.language,
                 base_seed=args.seed, n_draws=args.n_draws,
                 timeout=args.timeout, workers=per_problem_workers,
-                executor=executor,
             )
             return {"problem_id": pid, "language": args.language,
                     "answer": answer_to_dict(canon, max_samples=_ANSWER_MAX_SAMPLES)}
@@ -853,8 +796,8 @@ def crosscheck_problem(
     target_real: dict,
     reference_real: dict,
     *,
-    target_executor,
-    reference_executor,
+    target_language: str,
+    reference_language: str = "webppl",
     base_seed: int = DEFAULT_SEED,
     n_draws: int = DEFAULT_N_MC,
     k_exact: int = _DEFAULT_K_EXACT,
@@ -880,16 +823,17 @@ def crosscheck_problem(
         return {"problem_id": pid, "status": "error", "error": f"bad spec: {exc}"}
 
     sides = {}
-    for name, real, executor in (
-        ("target", target_real, target_executor),
-        ("reference", reference_real, reference_executor),
+    for name, real, lang in (
+        ("target", target_real, target_language),
+        ("reference", reference_real, reference_language),
     ):
         try:
             gts, _ = collect_gt_answers(
                 real["code"], spec,
+                language=lang,
                 base_seed=base_seed, n_draws=n_draws,
                 k_exact=k_exact, k_draws=k_draws,
-                timeout=timeout, workers=workers, executor=executor,
+                timeout=timeout, workers=workers,
             )
             sides[name] = gts
         except (RuntimeError, AlgebraError) as exc:
@@ -929,9 +873,6 @@ def crosscheck_problem(
 
 def cmd_crosscheck(args) -> None:
     """Cross-language gate: target-language realizations vs reference GT."""
-    target_executor = executor_for(args.language)
-    reference_executor = executor_for(args.reference)
-
     id_set = set(args.ids) if args.ids else None
     problems, target_reals = load_corpus(id_set, language=args.language)
     _, ref_list = load_corpus(
@@ -953,8 +894,8 @@ def cmd_crosscheck(args) -> None:
         prob, target_real = pair
         row = crosscheck_problem(
             prob, target_real, ref_by_id[prob["problem_id"]],
-            target_executor=target_executor,
-            reference_executor=reference_executor,
+            target_language=args.language,
+            reference_language=args.reference,
             base_seed=args.seed, n_draws=args.n_draws,
             k_exact=args.k_exact, k_draws=args.k_draws,
             timeout=args.timeout, workers=per_problem_workers,
@@ -1162,7 +1103,6 @@ def main() -> None:
 
     id_set = set(args.ids) if args.ids else None
     problems, realizations = load_corpus(id_set, language=args.language)
-    executor = executor_for(args.language)
 
     if not problems:
         print("No matching problems found.")
@@ -1181,13 +1121,13 @@ def main() -> None:
         prob, real = pair
         return gate_problem(
             prob, real,
+            language=args.language,
             base_seed=args.seed,
             n_draws=args.n_draws,
             k_exact=args.k_exact,
             k_draws=args.k_draws,
             timeout=args.timeout,
             workers=per_problem_workers,
-            executor=executor,
         )
 
     def _pa_line(r: dict) -> str:
