@@ -1,9 +1,9 @@
-// Source of truth lives at data/prompts/{system_base,webppl_primer}.txt;
+// Source of truth lives at data/prompts/{webppl_system_base,webppl_primer,pyro_primer}.txt;
 // eval/prompt.py reads the same files. Vite's `?raw` import inlines the
 // file content as a string at build time — no Node fs at runtime.
 
 // @ts-expect-error Vite plugin types for ?raw imports
-import systemBase from '../../../data/prompts/system_base.txt?raw';
+import systemBase from '../../../data/prompts/webppl_system_base.txt?raw';
 // @ts-expect-error Vite plugin types for ?raw imports
 import webpplPrimer from '../../../data/prompts/webppl_primer.txt?raw';
 // @ts-expect-error Vite plugin types for ?raw imports

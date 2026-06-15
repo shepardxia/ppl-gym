@@ -1,37 +1,26 @@
-Pyro is a probabilistic programming framework on PyTorch. Programs use Python syntax with `pyro.sample`, `pyro.factor`, and inference algorithms from `pyro.infer`. A few conventions for this benchmark:
+Pyro is a probabilistic programming framework built on PyTorch. Models are written in Python with `pyro.sample` and `pyro.factor`, and inference uses the algorithms in `pyro.infer`.
 
-Imports already available at the top of your program (do not re-import):
-  - `import pyro`
-  - `import pyro.distributions as dist`
-  - `import torch`
-You may import anything else you need (e.g. `import pyro.infer`). Seeding is handled for you — do not call `pyro.set_rng_seed`.
+`pyro`, `pyro.distributions as dist`, `pyro.infer`, and `torch` are already imported and ready to use.
 
-Random sampling: every random draw uses `pyro.sample("name", dist.<Name>(args))`. Each call must have a unique string name within an inference run — loops over sample calls need the index in the name (`f"x{i}"`).
+Random sampling: every random choice is `pyro.sample("name", dist.<Name>(args))`, and each sample site needs a unique string name (index the name inside loops, e.g. `f"x{i}"`).
 
-Common distributions (in `dist`): `Bernoulli(p)` (float-valued: 0.0/1.0), `Categorical(probs=tensor)` (int-valued 0..K-1), `Normal(loc, scale)`, `Beta(a, b)`, `Gamma(concentration, rate)`, `Dirichlet(concentration_tensor)`, `Binomial(total_count, probs)`, `Poisson(rate)`, `Uniform(low, high)`.
+Common distributions (in `dist`): `Bernoulli(p)` (values 0.0/1.0), `Categorical(probs=tensor)` (values 0..K-1), `Normal(loc, scale)`, `Beta(a, b)`, `Gamma(concentration, rate)`, `Dirichlet(concentration_tensor)`, `Binomial(total_count, probs)`, `Poisson(rate)`, `Uniform(low, high)`.
 
 Conditioning:
-  - `pyro.sample("obs", dist.Normal(mu, 1.0), obs=torch.tensor(2.5))` — observe a value.
-  - Deterministic evidence: observe the indicator, `pyro.sample("e", dist.Bernoulli(flag.float()), obs=torch.tensor(1.0))`, or use `pyro.factor("name", log_weight_tensor)`.
+  - observe a value: `pyro.sample("obs", dist.Normal(mu, 1.0), obs=torch.tensor(2.5))`;
+  - condition on an event: observe its indicator, `pyro.sample("e", dist.Bernoulli(flag.float()), obs=torch.tensor(1.0))`, or add a log-weight with `pyro.factor("name", log_weight)`.
 
-Express the model with `pyro.sample` sites and run inference through pyro machinery — do not replace the model with hand-computed probability tables.
+Inference patterns:
+  - posterior over discrete latents: `post = pyro.infer.Importance(model, num_samples=...).run()` then `pyro.infer.EmpiricalMarginal(post)`, or aggregate the weighted traces into a dict from outcome to probability;
+  - MCMC: `pyro.infer.MCMC(pyro.infer.NUTS(model), num_samples=..., warmup_steps=...)`, then `mcmc.get_samples()["site"]` for the posterior samples (use `pyro.infer.HMC(step_size=..., num_steps=...)` when specific HMC parameters are required);
+  - when the posterior has a closed form, constructing the resulting distribution directly is fine.
 
-Common inference patterns:
-  - Posterior over discrete latents (analog of WebPPL `Infer({method:'enumerate'})`): build the model, then
-    `post = pyro.infer.Importance(model, num_samples=20000).run()` and `pyro.infer.EmpiricalMarginal(post)`,
-    or aggregate the weighted traces into a dict mapping each outcome to its probability.
-  - Pinned MCMC (the task names sample counts/kernels): `pyro.infer.MCMC(pyro.infer.NUTS(model), num_samples=..., warmup_steps=...)`; HMC parameters in the task → `pyro.infer.HMC(step_size=..., num_steps=...)`. `mcmc.get_samples()["site"]` is a tensor of posterior samples.
-  - Conjugate/closed-form posteriors: constructing the resulting distribution object directly (e.g. an updated `dist.Beta`) is fine when the task asks for the distribution itself.
+Binding the answer (the task's Answer format section says which form is expected):
+  - a dict from each outcome to its probability: `{True: 0.6, False: 0.4}`, `{"chases": 0.7, "sleeps": 0.3}` (tuple keys are allowed for sequence-valued outcomes);
+  - a pyro/torch `Distribution` (including an `EmpiricalMarginal`);
+  - a list or 1-D tensor of posterior samples;
+  - a plain number, bool, string, or list for a value answer;
+  - for a record answer, a dict with exactly the named fields.
+When the task lists the exact outcome labels, use those exact values as keys (a boolean label is the Python bool; a string label is that string).
 
-Binding the answer — natural Python forms (the Answer format section of each task states which is expected):
-  - a dict mapping each outcome to its probability: `{True: 0.6, False: 0.4}`, `{"chases": 0.7, "sleeps": 0.3}`, tuple keys allowed for sequence-valued outcomes;
-  - a pyro/torch Distribution object (including `EmpiricalMarginal`);
-  - a list (or 1-D tensor) of many posterior samples;
-  - a plain number / bool / string / list for value answers;
-  - for record answers, a dict with exactly the named fields, each per the rules above.
-When the task enumerates the exact outcome labels, use those exact values as your dict keys (a boolean label means the Python bool, a string label means that string).
-
-Avoid:
-  - duplicate sample-site names (Pyro errors);
-  - replacing the generative model with closed-form arithmetic unless the task is a deterministic computation;
-  - printing — only `ANSWER` is read.
+Reusing a sample-site name raises an error. Only `ANSWER` is read from your program.

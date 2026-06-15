@@ -3,7 +3,7 @@
 `eval.render.render_problem` produces the user message; this module owns the
 language-specific system prompt (base + primer) and extracts the fenced code
 block from the LLM response. The primer levels the playing field across models
-that may not have seen much WebPPL in pretraining.
+that may not have seen much of the target PPL in pretraining.
 """
 
 from __future__ import annotations
@@ -15,25 +15,10 @@ from pathlib import Path
 # Source of truth for the prompt text lives in data/prompts/.
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "data" / "prompts"
 
-SYSTEM_PROMPT_BASE = (_PROMPTS_DIR / "system_base.txt").read_text().rstrip("\n")
+WEBPPL_SYSTEM_BASE = (_PROMPTS_DIR / "webppl_system_base.txt").read_text().rstrip("\n")
+PYRO_SYSTEM_BASE = (_PROMPTS_DIR / "pyro_system_base.txt").read_text().rstrip("\n")
 WEBPPL_PRIMER = (_PROMPTS_DIR / "webppl_primer.txt").read_text().rstrip("\n")
 PYRO_PRIMER = (_PROMPTS_DIR / "pyro_primer.txt").read_text().rstrip("\n")
-
-# The base prompt is WebPPL-flavored ("emit one fenced code block ending in
-# var ANSWER = ..."). For Pyro we override the format guidance.
-PYRO_SYSTEM_BASE = (
-    "You are a Pyro code generator. Given an exercise, produce a single Python program "
-    "using Pyro that binds the answer to a top-level variable named `ANSWER`.\n\n"
-    "Answer format (strict): emit exactly one fenced code block.\n\n"
-    "```python\n"
-    "<your Pyro program ending with: ANSWER = <expression>>\n"
-    "```\n\n"
-    "The last statement of your program MUST be `ANSWER = <expression>` where "
-    "`<expression>` is the answer the prompt asks for — typically a "
-    "`pyro.distributions.Distribution` for a distribution, a numeric/list/dict value, "
-    "or a Python literal.\n\n"
-    "Do not write prose, explanations, or multiple code blocks."
-)
 
 
 def _primer_for(language: str) -> str:
@@ -45,7 +30,7 @@ def _primer_for(language: str) -> str:
 def _base_for(language: str) -> str:
     if language == "pyro":
         return PYRO_SYSTEM_BASE
-    return SYSTEM_PROMPT_BASE
+    return WEBPPL_SYSTEM_BASE
 
 
 def system_prompt(*, with_primer: bool = True, language: str = "webppl") -> str:

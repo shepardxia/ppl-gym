@@ -47,9 +47,8 @@ SERIALIZER_HEADER = r'''
 # ── Preamble ─────────────────────────────────────────────────────────────────
 # The standard Pyro toolkit, provided to every realization so its code is
 # import-free (mirrors WebPPL, whose deps are --require'd). Realizations use
-# these names directly; the pyro primer documents what's available. Keep this in
-# sync with data/prompts/pyro_primer.txt; bump EXECUTOR_VERSION["pyro"] in
-# eval/gt_cache.py when it changes.
+# these names directly; the pyro primer documents the subset solvers rely on.
+# Bump EXECUTOR_VERSION["pyro"] in eval/gt_cache.py when this changes.
 import json
 import math
 import os
