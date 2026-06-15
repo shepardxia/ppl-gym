@@ -24,7 +24,7 @@ from eval.corpus import batch_executor_for
 
 # Bump a language's tag when its executor/serializer output format changes,
 # so stale cached runs are never read.
-EXECUTOR_VERSION = {"webppl": "wp1", "pyro": "py1"}
+EXECUTOR_VERSION = {"webppl": "wp1", "pyro": "py3"}  # py3: float64 default + import-free preamble
 
 _CACHE_DIR = Path("data/.gt_cache")
 

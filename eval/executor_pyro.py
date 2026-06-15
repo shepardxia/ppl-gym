@@ -44,14 +44,33 @@ _VENV_PY = _PROJECT_ROOT / ".venv" / "bin" / "python"
 
 # Use ''' delimiter so """ inside user-facing docstrings don't close this string.
 SERIALIZER_HEADER = r'''
+# ── Preamble ─────────────────────────────────────────────────────────────────
+# The standard Pyro toolkit, provided to every realization so its code is
+# import-free (mirrors WebPPL, whose deps are --require'd). Realizations use
+# these names directly; the pyro primer documents what's available. Keep this in
+# sync with data/prompts/pyro_primer.txt; bump EXECUTOR_VERSION["pyro"] in
+# eval/gt_cache.py when it changes.
 import json
 import math
 import os
 import sys
+import random
+import itertools
+import functools
+from collections import defaultdict, Counter
+import torch
 import pyro
 import pyro.distributions as dist
-import torch
-from collections import defaultdict
+import pyro.infer
+import pyro.poutine
+
+# ── Precision ────────────────────────────────────────────────────────────────
+# Ground truth runs in float64. Torch defaults to float32 (~7 significant
+# digits), which silently corrupts exact enumeration over models with extreme
+# probabilities (e.g. a 6e-5 vs 1e-9 competition in a conditioned posterior).
+# float64 is the right precision/speed trade for GT and removes that footgun
+# from every realization at once.
+torch.set_default_dtype(torch.float64)
 
 # ── Seeding ──────────────────────────────────────────────────────────────────
 # pyro.set_rng_seed seeds torch, Python random, and numpy in one call.
