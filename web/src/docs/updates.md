@@ -1,3 +1,5 @@
+**2026-06-16 — Pyro column rebuilt to idiomatic Pyro.** Every realization now expresses its model through Pyro's own inference — enumeration, MCMC, importance sampling, `infer_discrete` — and is both cross-verified against WebPPL and audited for proper library use. 111/115 realize this way; the 4 inference-algorithms hard-condition method demos are marked Pyro-unavailable with documented reasons, a new per-language availability state the browser now shows.
+
 **2026-06-11 — Pyro column complete.** 115/115 cross-verified against WebPPL; the gate also caught and fixed a biased, previously-accepted WebPPL ground truth.
 
 **2026-06-11 — Gate report v2.** Full re-gate under the rebuilt pipeline: 112/115 first-pass solver accepts (vs 81 in the first campaign), rest closed by evidence-driven statement fixes.
