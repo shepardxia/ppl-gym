@@ -39,7 +39,7 @@ from eval.algebra import (
     verdict,
 )
 from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
-from eval.corpus import load_corpus, load_problems
+from eval.corpus import load_corpus, load_problems, load_unavailable
 from eval.gt_cache import cached_run
 from eval.generate_batch import (
     build_requests,
@@ -153,7 +153,13 @@ def collect_gt_answers(
         return canonical, n_runs
 
     seeds = [base_seed + i for i in range(k_exact)]
-    raw = cached_run(language, code, seeds, timeout=timeout,
+    # The batch runs all k_exact seeds in one subprocess under a single timeout,
+    # so `timeout` is the per-seed budget. Measured: right-sized MCMC realizations
+    # (NUTS within the authoring ranges) take 15-55s for a single seed on the
+    # heavier hierarchical / sequence models — independent of sample count, which
+    # is per-leapfrog cost — so k of them cannot share one per-program budget.
+    # Draws blocks above keep the flat budget (many fast forward-samples).
+    raw = cached_run(language, code, seeds, timeout=timeout * len(seeds),
                      workers=workers, use_cache=use_cache)
     if any(a is None for a in raw):
         raise RuntimeError("execution failed")
@@ -772,16 +778,26 @@ def cmd_answers(args) -> None:
         line=lambda r: f"{r['problem_id']} ... {'error: ' + r['error'][:60] if 'error' in r else 'ok'}",
     )
 
+    # Fold unavailable realizations for this language into the output.
+    unavail = load_unavailable(args.language)
+    unavail_rows = [
+        {"problem_id": r["problem_id"], "language": args.language,
+         "status": "unavailable", "reason": r.get("reason", "")}
+        for r in unavail
+        if id_set is None or r["problem_id"] in id_set
+    ]
+
     out = Path(args.report) if args.report else _GT_ANSWERS
     merged: dict[tuple, dict] = {}
     if out.exists():
         for row in load_jsonl(out):
             merged[(row["problem_id"], row["language"])] = row
-    for r in rows:
+    for r in rows + unavail_rows:
         merged[(r["problem_id"], r["language"])] = r
     write_jsonl(out, sorted(merged.values(), key=lambda r: (r["problem_id"], r["language"])))
     n_err = sum(1 for r in rows if "error" in r)
-    print(f"\n[answers] {out}: {len(rows)} written ({n_err} errors), {len(merged)} total rows")
+    print(f"\n[answers] {out}: {len(rows)} written ({n_err} errors, "
+          f"{len(unavail_rows)} unavailable), {len(merged)} total rows")
 
 
 # ---------------------------------------------------------------------------
@@ -909,15 +925,26 @@ def cmd_crosscheck(args) -> None:
 
     reports = _map_problems(pairs, _check_one, parallel=parallel, line=_line)
 
+    # Fold unavailable realizations for the target language into the report.
+    unavail = load_unavailable(args.language)
+    unavail_rows = [
+        {"problem_id": r["problem_id"], "language": args.language,
+         "reference": args.reference, "status": "unavailable",
+         "reason": r.get("reason", "")}
+        for r in unavail
+        if id_set is None or r["problem_id"] in id_set
+    ]
+
     report_path = Path(args.report) if args.report else _CROSSCHECK_REPORT
-    total = _merge_report(report_path, reports)
+    total = _merge_report(report_path, reports + unavail_rows)
+    n_checked = len(reports)
     print(f"\n[crosscheck] report written to {report_path} "
-          f"({len(reports)} checked, {total} total rows)")
+          f"({n_checked} checked, {len(unavail_rows)} unavailable, {total} total rows)")
     counts: dict[str, int] = {}
-    for r in reports:
+    for r in reports + unavail_rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
     for s, n in sorted(counts.items()):
-        print(f"  {s:<12s} {n:>4d} / {len(reports)}")
+        print(f"  {s:<12s} {n:>4d} / {total}")
 
 
 # ---------------------------------------------------------------------------

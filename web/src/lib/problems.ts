@@ -63,7 +63,11 @@ export type AnswerSpec =
 export interface Realization {
   problem_id: string;
   language: string;
-  code: string;
+  code?: string;
+  /** When false, the problem is not realizable in this language; `reason` says why
+   *  and there is no `code`. See data/REALIZATIONS.md §Per-language availability. */
+  available?: boolean;
+  reason?: string;
 }
 
 export interface GatePhaseA {

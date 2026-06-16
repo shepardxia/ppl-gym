@@ -50,9 +50,22 @@ Design rationale and migration plan: `data/REDESIGN.md`.
 }
 ```
 
-Live columns: `data/realizations/webppl.jsonl` and `data/realizations/pyro.jsonl`
-(both 115/115 verified). Gate results live in the report JSONLs
-(`data/problems/_gate_report.jsonl`, `_gate_solver_report.jsonl`,
+A realization can be **unavailable** — a documented gap rather than a missing row:
+
+```json
+{"problem_id": "probmods2-inference-algorithms/ex1.1", "language": "pyro",
+ "available": false, "reason": "query pins MCMC/MH ..."}
+```
+
+The `available: false` form carries no `code` key. When `available` is absent the record
+is treated as available (all existing code records). `eval/corpus.py:is_available(rec)`
+is the canonical test; `load_corpus` excludes unavailable records from execution;
+`load_unavailable` returns them for reporting. Gate commands (`crosscheck`, `answers`)
+fold unavailable records into their reports as `{"status": "unavailable", "reason": ...}`.
+
+Live columns: `data/realizations/webppl.jsonl` (115/115) and
+`data/realizations/pyro.jsonl` (112 available + 3 unavailable). Gate results live in
+the report JSONLs (`data/problems/_gate_report.jsonl`, `_gate_solver_report.jsonl`,
 `_gate_crosscheck_report.jsonl`), keyed by problem_id — not on the realization record.
 
 A realization's code must produce `ANSWER` **via the language's own modeling/inference

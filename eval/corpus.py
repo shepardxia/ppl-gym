@@ -87,12 +87,32 @@ def load_problems(
     return problems
 
 
+def is_available(rec: dict) -> bool:
+    """Return True iff a realization record is available for execution.
+
+    A record is available when it carries a ``code`` key AND does not
+    explicitly declare ``available: false``.  The ``available`` field
+    defaults to True when absent (existing records without the field are
+    available).
+    """
+    return rec.get("available", True) and "code" in rec
+
+
 def load_realizations(language: str = "webppl") -> list[dict]:
     """Load all realizations for the given language."""
     path = _realizations_path(language)
     if not path.exists():
         return []
     return load_jsonl(path)
+
+
+def load_unavailable(language: str = "webppl") -> list[dict]:
+    """Return realization records for which ``is_available`` is False.
+
+    Each returned record has at minimum ``problem_id``, ``language``, and
+    ``reason``; it has no ``code`` key.
+    """
+    return [r for r in load_realizations(language) if not is_available(r)]
 
 
 def load_corpus(
@@ -110,7 +130,7 @@ def load_corpus(
     problems = load_problems(include_retired=False)
     realizations = load_realizations(language)
 
-    real_by_id = {r["problem_id"]: r for r in realizations if "code" in r}
+    real_by_id = {r["problem_id"]: r for r in realizations if is_available(r)}
 
     joined: list[tuple[dict, dict]] = [
         (prob, real_by_id[prob["problem_id"]])

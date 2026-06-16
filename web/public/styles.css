@@ -654,6 +654,26 @@ button { font-family: inherit; }
   border-radius: 6px;
   text-align: center;
 }
+/* Per-language unavailable: a documented gap, not an error — muted, like out-empty. */
+.compare-unavailable {
+  padding: 14px 16px;
+  background: var(--bg-elev);
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+}
+.compare-unavailable-hd {
+  font: 10.5px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--fg-dim);
+  margin-bottom: 8px;
+}
+.compare-unavailable-reason {
+  margin: 0;
+  font: 13px var(--font-mono);
+  line-height: 1.55;
+  color: var(--fg);
+}
 .out-value { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
 .out-value-pre { margin: 0; font: 13px var(--font-mono); color: var(--fg); white-space: pre-wrap; }
 .out-record { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }

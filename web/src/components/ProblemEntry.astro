@@ -27,6 +27,7 @@ function gateTone(status: string | undefined): string {
   if (status === 'gt_suspect' || status === 'underdetermined') return 'poor';
   if (status === 'draft') return 'ok';
   if (status === 'reviewed') return 'good';
+  if (status === 'unavailable') return 'na';  // documented gap, not a failure
   return 'bad';
 }
 const solverTone = gateTone(gateB?.status);
@@ -40,28 +41,42 @@ interface SourceData {
   key: string; label: string; short: string;
   code: string; output: RenderOutput; error: string | null;
   bucket: null; tv: number | null; kl: null;
+  unavailable: boolean; reason: string;
 }
 const gtSrc: SourceData = {
   key: 'gt', label: 'WebPPL ground truth', short: 'webppl',
   code: realization?.code ?? '', output: webpplOut, error: null,
   bucket: null, tv: null, kl: null,
+  unavailable: realization?.available === false, reason: realization?.reason ?? '',
 };
 const pyroSrc: SourceData = {
   key: 'pyro', label: 'Pyro realization', short: 'pyro',
   code: pyroRealization?.code ?? '', output: pyroOut, error: null,
   bucket: null, tv: crosscheck?.distance ?? null, kl: null,
+  unavailable: pyroRealization?.available === false, reason: pyroRealization?.reason ?? '',
 };
 
 function escape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function unavailableHtml(short: string, reason: string): string {
+  return (
+    `<div class="compare-unavailable">` +
+      `<div class="compare-unavailable-hd">unavailable in ${escape(short)}</div>` +
+      `<p class="compare-unavailable-reason">${escape(reason)}</p>` +
+    `</div>`
+  );
+}
+
 function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
   const tagClass = side === 'a' ? 'tag-a' : 'tag-b';
   const lang = src.key === 'pyro' ? 'python' : 'webppl';
-  const body = src.code
-    ? renderCode(src.code, lang)
-    : `<div class="out-empty">(no ${escape(src.short)} realization)</div>`;
+  const body = src.unavailable
+    ? unavailableHtml(src.short, src.reason)
+    : src.code
+      ? renderCode(src.code, lang)
+      : `<div class="out-empty">(no ${escape(src.short)} realization)</div>`;
   return (
     `<div class="compare-col">` +
       `<div class="compare-col-hd">` +
@@ -109,8 +124,8 @@ if (distLike) {
 
 // payload for browse.js source switching (gt + pyro)
 const sourcePayload = {
-  gt:   { short: gtSrc.short, label: gtSrc.label, code: gtSrc.code, output: gtSrc.output, error: null, bucket: null, tv: null, kl: null },
-  pyro: { short: pyroSrc.short, label: pyroSrc.label, code: pyroSrc.code, output: pyroSrc.output, error: null, bucket: null, tv: pyroSrc.tv, kl: null },
+  gt:   { short: gtSrc.short, label: gtSrc.label, code: gtSrc.code, output: gtSrc.output, error: null, bucket: null, tv: null, kl: null, unavailable: gtSrc.unavailable, reason: gtSrc.reason },
+  pyro: { short: pyroSrc.short, label: pyroSrc.label, code: pyroSrc.code, output: pyroSrc.output, error: null, bucket: null, tv: pyroSrc.tv, kl: null, unavailable: pyroSrc.unavailable, reason: pyroSrc.reason },
 };
 ---
 
@@ -247,8 +262,12 @@ const sourcePayload = {
               <span class="bucket-label">{crosscheck ? statusLabel(crosscheck.status) : '—'}</span>
             </span>
           </td>
-          <td class="num">
-            {crosscheck ? `d=${fmt(crosscheck.distance)} ≤ tol ${fmt(crosscheck.tol)} · floors ${fmt(crosscheck.target_floor)}/${fmt(crosscheck.reference_floor)}` : '—'}
+          <td class={crosscheck?.status === 'unavailable' ? 'reason-cell' : 'num'}>
+            {crosscheck?.status === 'unavailable'
+              ? (pyroRealization?.reason ?? 'documented gap — see realization')
+              : crosscheck
+                ? `d=${fmt(crosscheck.distance)} ≤ tol ${fmt(crosscheck.tol)} · floors ${fmt(crosscheck.target_floor)}/${fmt(crosscheck.reference_floor)}`
+                : '—'}
           </td>
         </tr>
       </tbody>
@@ -293,4 +312,7 @@ const sourcePayload = {
   }
   .stmt-field-hd:first-child { margin-top: 0; }
   .prompt-card p { margin: 0 0 4px; }
+
+  /* .compare-unavailable lives in global styles.css (used in set:html + browse.js). */
+  td.reason-cell { font: 12px var(--font-mono); line-height: 1.45; color: var(--fg-dim); white-space: normal; max-width: 56ch; }
 </style>
