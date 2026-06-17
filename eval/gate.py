@@ -95,6 +95,20 @@ def _merge_report(report_path: Path, new_rows: list[dict]) -> int:
     return len(sorted_rows)
 
 
+def _unavailable_rows(language: str, id_set: set | None, *, extra: dict | None = None) -> list[dict]:
+    """Report rows for language-unavailable realizations (crosscheck / answers).
+
+    Each is {problem_id, language, status: "unavailable", reason} merged with `extra`
+    (e.g. {"reference": ...} for crosscheck), filtered to `id_set` when given.
+    """
+    return [
+        {"problem_id": r["problem_id"], "language": language,
+         "status": "unavailable", "reason": r.get("reason", ""), **(extra or {})}
+        for r in load_unavailable(language)
+        if id_set is None or r["problem_id"] in id_set
+    ]
+
+
 # Defaults match SCHEMA.md: k=5 for non-draws, k=3 for draws blocks.
 _DEFAULT_K_EXACT = 5
 _DEFAULT_K_DRAWS = 3
@@ -779,13 +793,7 @@ def cmd_answers(args) -> None:
     )
 
     # Fold unavailable realizations for this language into the output.
-    unavail = load_unavailable(args.language)
-    unavail_rows = [
-        {"problem_id": r["problem_id"], "language": args.language,
-         "status": "unavailable", "reason": r.get("reason", "")}
-        for r in unavail
-        if id_set is None or r["problem_id"] in id_set
-    ]
+    unavail_rows = _unavailable_rows(args.language, id_set)
 
     out = Path(args.report) if args.report else _GT_ANSWERS
     merged: dict[tuple, dict] = {}
@@ -926,22 +934,16 @@ def cmd_crosscheck(args) -> None:
     reports = _map_problems(pairs, _check_one, parallel=parallel, line=_line)
 
     # Fold unavailable realizations for the target language into the report.
-    unavail = load_unavailable(args.language)
-    unavail_rows = [
-        {"problem_id": r["problem_id"], "language": args.language,
-         "reference": args.reference, "status": "unavailable",
-         "reason": r.get("reason", "")}
-        for r in unavail
-        if id_set is None or r["problem_id"] in id_set
-    ]
+    unavail_rows = _unavailable_rows(args.language, id_set, extra={"reference": args.reference})
+    all_rows = reports + unavail_rows
 
     report_path = Path(args.report) if args.report else _CROSSCHECK_REPORT
-    total = _merge_report(report_path, reports + unavail_rows)
+    total = _merge_report(report_path, all_rows)
     n_checked = len(reports)
     print(f"\n[crosscheck] report written to {report_path} "
           f"({n_checked} checked, {len(unavail_rows)} unavailable, {total} total rows)")
     counts: dict[str, int] = {}
-    for r in reports + unavail_rows:
+    for r in all_rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
     for s, n in sorted(counts.items()):
         print(f"  {s:<12s} {n:>4d} / {total}")

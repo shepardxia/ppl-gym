@@ -26,11 +26,6 @@ def test_is_available_code_record():
     assert is_available({"problem_id": "p", "language": "pyro", "code": "..."})
 
 
-def test_is_available_absent_available_field():
-    """available absent defaults to True; code present → available."""
-    assert is_available({"problem_id": "p", "language": "pyro", "code": "x = 1"})
-
-
 def test_is_available_explicit_false():
     """available: false with no code → not available."""
     assert not is_available({

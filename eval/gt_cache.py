@@ -66,17 +66,16 @@ def cached_run(
         return []
 
     active = use_cache and not _disabled()
-    if active:
-        path = _CACHE_DIR / f"{_key(language, code, seeds)}.json"
-        if path.exists():
-            try:
-                return json.loads(path.read_text())
-            except (json.JSONDecodeError, OSError):
-                pass  # corrupt cache entry → recompute
+    path = _CACHE_DIR / f"{_key(language, code, seeds)}.json" if active else None
+    if path is not None and path.exists():
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass  # corrupt cache entry → recompute
 
     raw = batch_executor_for(language)(code, seeds, timeout, workers)
 
-    if active and all(a is not None for a in raw):
+    if path is not None and all(a is not None for a in raw):
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(raw))

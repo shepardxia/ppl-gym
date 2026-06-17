@@ -348,11 +348,10 @@
     }
     const tag = side === 'a' ? 'tag-a' : 'tag-b';
     let body;
-    if (src.unavailable) {
-      body = `<div class="compare-unavailable">` +
-        `<div class="compare-unavailable-hd">unavailable in ${escapeHtml(src.short)}</div>` +
-        `<p class="compare-unavailable-reason">${escapeHtml(src.reason || '')}</p>` +
-        `</div>`;
+    if (src.bodyHtml != null) {
+      // Problems browser: the column body (code / unavailable / empty) is
+      // pre-rendered server-side; reuse it rather than re-implementing here.
+      body = src.bodyHtml;
     } else if (src.error) {
       body = `<div class="compare-error">` +
         `<div class="compare-error-hd">execution error</div>` +

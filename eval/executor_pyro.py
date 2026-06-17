@@ -379,7 +379,6 @@ def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1) ->
             proc = subprocess.run(
                 [str(_VENV_PY), tmp_path],
                 capture_output=True, text=True, timeout=timeout,
-                env={**os.environ},
             )
         except subprocess.TimeoutExpired:
             return [None] * len(seeds)

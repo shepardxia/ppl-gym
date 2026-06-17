@@ -69,21 +69,24 @@ function unavailableHtml(short: string, reason: string): string {
   );
 }
 
+// Render one source's column body. This is the single source of truth: the server
+// renders the initial grid with it AND embeds it in sourcePayload, so browse.js
+// reuses it on source-switch rather than re-implementing the same branches.
+function srcBodyHtml(src: SourceData): string {
+  if (src.unavailable) return unavailableHtml(src.short, src.reason);
+  if (src.code) return renderCode(src.code, src.key === 'pyro' ? 'python' : 'webppl');
+  return `<div class="out-empty">(no ${escape(src.short)} realization)</div>`;
+}
+
 function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
   const tagClass = side === 'a' ? 'tag-a' : 'tag-b';
-  const lang = src.key === 'pyro' ? 'python' : 'webppl';
-  const body = src.unavailable
-    ? unavailableHtml(src.short, src.reason)
-    : src.code
-      ? renderCode(src.code, lang)
-      : `<div class="out-empty">(no ${escape(src.short)} realization)</div>`;
   return (
     `<div class="compare-col">` +
       `<div class="compare-col-hd">` +
         `<span class="compare-col-tag ${tagClass}">${escape(src.short)}</span>` +
         `<span class="compare-col-label">${escape(src.label)}</span>` +
       `</div>` +
-      body +
+      srcBodyHtml(src) +
     `</div>`
   );
 }
@@ -122,10 +125,17 @@ if (distLike) {
   );
 }
 
-// payload for browse.js source switching (gt + pyro)
+// payload for browse.js source switching (gt + pyro). Available sources carry raw
+// `code` (browse.js highlights it on switch); unavailable sources carry the
+// server-rendered body (so the unavailable markup has a single source, with no
+// payload bloat from pre-rendering every code block).
+const payloadEntry = (src: SourceData) => ({
+  short: src.short, label: src.label, output: src.output, tv: src.tv,
+  ...(src.unavailable ? { bodyHtml: srcBodyHtml(src) } : { code: src.code }),
+});
 const sourcePayload = {
-  gt:   { short: gtSrc.short, label: gtSrc.label, code: gtSrc.code, output: gtSrc.output, error: null, bucket: null, tv: null, kl: null, unavailable: gtSrc.unavailable, reason: gtSrc.reason },
-  pyro: { short: pyroSrc.short, label: pyroSrc.label, code: pyroSrc.code, output: pyroSrc.output, error: null, bucket: null, tv: pyroSrc.tv, kl: null, unavailable: pyroSrc.unavailable, reason: pyroSrc.reason },
+  gt: payloadEntry(gtSrc),
+  pyro: payloadEntry(pyroSrc),
 };
 ---
 

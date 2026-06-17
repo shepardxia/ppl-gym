@@ -207,8 +207,7 @@ def execute_webppl_batch(code: str, seeds, timeout: int = 30, workers: int = 8) 
             pool.submit(execute_webppl, code, timeout=timeout, random_seed=s): i
             for i, s in enumerate(seeds)
         }
-        for fut in futs:
-            i = futs[fut]
+        for fut, i in futs.items():
             r = fut.result()
             results[i] = r.answer if r.success else None
     return results

@@ -10,23 +10,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from eval.executor import execute_webppl, execute_webppl_batch
-from eval.executor_pyro import execute_pyro, execute_pyro_batch
+from eval.executor import execute_webppl_batch
+from eval.executor_pyro import execute_pyro_batch
 from eval.io import load_jsonl
 
-# Language bindings: single-run + batched executor per realization language.
-# The batched form (run a set of seeds, answers out) is the primitive used by
-# GT collection; single-run is the n=1 case kept for ad-hoc use.
-EXECUTORS = {"webppl": execute_webppl, "pyro": execute_pyro}
+# Language bindings: the batched executor (run a set of seeds, answers out) per
+# realization language — the primitive used by GT collection. (For ad-hoc n=1 runs
+# import execute_webppl / execute_pyro directly from their executor modules.)
 BATCH_EXECUTORS = {"webppl": execute_webppl_batch, "pyro": execute_pyro_batch}
-
-
-def executor_for(language: str):
-    try:
-        return EXECUTORS[language]
-    except KeyError:
-        raise ValueError(
-            f"no executor for language {language!r} (known: {sorted(EXECUTORS)})")
 
 
 def batch_executor_for(language: str):
