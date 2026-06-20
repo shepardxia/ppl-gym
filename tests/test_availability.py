@@ -6,11 +6,9 @@ Covers:
 """
 from __future__ import annotations
 
-from eval.corpus import is_available, load_corpus, load_realizations, load_unavailable
+import pytest
 
-# ---------------------------------------------------------------------------
-# (a) is_available
-# ---------------------------------------------------------------------------
+from eval.corpus import is_available, load_corpus, load_realizations, load_unavailable
 
 # The inference-algorithms hard-condition method demos — Pyro-unavailable.
 _UNAVAILABLE_IDS = {
@@ -21,27 +19,27 @@ _UNAVAILABLE_IDS = {
 }
 
 
-def test_is_available_code_record():
-    """A record with a code key (and no available field) is available."""
-    assert is_available({"problem_id": "p", "language": "pyro", "code": "..."})
+# ---------------------------------------------------------------------------
+# (a) is_available — available iff (available != False) AND has a code key
+# ---------------------------------------------------------------------------
 
 
-def test_is_available_explicit_false():
-    """available: false with no code → not available."""
-    assert not is_available({
-        "problem_id": "p", "language": "pyro",
-        "available": False, "reason": "some reason",
-    })
-
-
-def test_is_available_no_code_key():
-    """A record without a code key (but no explicit available field) is not available."""
-    assert not is_available({"problem_id": "p", "language": "pyro"})
-
-
-def test_is_available_false_without_code():
-    """available: false and no code → not available (belt-and-suspenders)."""
-    assert not is_available({"problem_id": "p", "available": False})
+@pytest.mark.parametrize(
+    "rec, expected",
+    [
+        # code key present, no explicit available field → available
+        ({"problem_id": "p", "language": "pyro", "code": "..."}, True),
+        # available: false with a reason and no code → not available
+        ({"problem_id": "p", "language": "pyro", "available": False,
+          "reason": "some reason"}, False),
+        # no code key, no available field → not available
+        ({"problem_id": "p", "language": "pyro"}, False),
+        # available: false and no code → not available (belt-and-suspenders)
+        ({"problem_id": "p", "available": False}, False),
+    ],
+)
+def test_is_available(rec, expected):
+    assert is_available(rec) is expected
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +48,7 @@ def test_is_available_false_without_code():
 
 
 def test_load_corpus_pyro_excludes_unavailable():
-    """load_corpus('pyro') must not include the 3 unavailable problems."""
+    """load_corpus('pyro') must not include any documented-unavailable problem."""
     _, reals = load_corpus(language="pyro")
     real_ids = {r["problem_id"] for r in reals}
     assert real_ids.isdisjoint(_UNAVAILABLE_IDS), (
@@ -66,22 +64,15 @@ def test_load_corpus_pyro_count_matches_available():
     assert len(reals) == len(available), f"corpus {len(reals)} != available {len(available)}"
 
 
-def test_load_unavailable_pyro_returns_documented_gaps():
-    """load_unavailable('pyro') must return exactly the documented unavailable set."""
-    unavail_ids = {r["problem_id"] for r in load_unavailable("pyro")}
-    assert unavail_ids == _UNAVAILABLE_IDS, (
-        f"expected {_UNAVAILABLE_IDS}, got {unavail_ids}"
-    )
+def test_load_unavailable_pyro():
+    """load_unavailable('pyro') returns exactly the documented gaps, and every
+    record carries a non-empty reason, has no code, and fails is_available."""
+    recs = load_unavailable("pyro")
 
+    unavail_ids = {r["problem_id"] for r in recs}
+    assert unavail_ids == _UNAVAILABLE_IDS, f"expected {_UNAVAILABLE_IDS}, got {unavail_ids}"
 
-def test_load_unavailable_pyro_has_reasons():
-    """Each unavailable record must carry a non-empty reason."""
-    for rec in load_unavailable("pyro"):
+    for rec in recs:
         assert rec.get("reason"), f"missing reason on {rec['problem_id']}"
         assert "code" not in rec, f"unavailable record must not have code: {rec['problem_id']}"
-
-
-def test_load_unavailable_pyro_not_available():
-    """Every record returned by load_unavailable must fail is_available."""
-    for rec in load_unavailable("pyro"):
         assert not is_available(rec), f"is_available returned True for {rec['problem_id']}"

@@ -28,54 +28,70 @@ _pdb = pytest.mark.skipif(not _HAVE_PDB, reason="posteriordb clone not present")
 # (a) stan_bundle codec
 # ---------------------------------------------------------------------------
 
-def test_bundle_roundtrip():
-    model = "data { int N; }\nparameters { real x; }\nmodel { x ~ normal(0,1); }"
-    data = {"N": 3, "y": [1.0, 2.0, 3.0]}
-    params = ["x", "z[1]"]
-    sampling = {"chains": 2, "iter_warmup": 500, "iter_sampling": 500}
+@pytest.mark.parametrize(
+    "model, data, params, sampling, expect_sampling",
+    [
+        # full roundtrip: model/data/params survive, sampling overrides applied
+        (
+            "data { int N; }\nparameters { real x; }\nmodel { x ~ normal(0,1); }",
+            {"N": 3, "y": [1.0, 2.0, 3.0]},
+            ["x", "z[1]"],
+            {"chains": 2, "iter_warmup": 500, "iter_sampling": 500},
+            {"chains": 2, "iter_warmup": 500, "iter_sampling": 500},
+        ),
+        # omitted sampling falls back to the default config
+        ("model {}", {"N": 1}, ["x"], None, stan_bundle.DEFAULT_SAMPLING),
+    ],
+)
+def test_bundle_roundtrip(model, data, params, sampling, expect_sampling):
     b = stan_bundle.unpack(stan_bundle.pack(model, data, params, sampling))
     assert b.data == data
     assert b.params == params
-    assert b.sampling["chains"] == 2 and b.sampling["iter_warmup"] == 500
-    assert "parameters { real x; }" in b.model
-
-
-def test_bundle_default_sampling():
-    b = stan_bundle.unpack(stan_bundle.pack("model {}", {"N": 1}, ["x"]))
-    assert b.sampling == stan_bundle.DEFAULT_SAMPLING
-
-
-def test_bundle_missing_directives_raise():
-    with pytest.raises(ValueError, match="DATA"):
-        stan_bundle.unpack("model {}\n//@ PARAMS [\"x\"]\n")
-    with pytest.raises(ValueError, match="PARAMS"):
-        stan_bundle.unpack("model {}\n//@ DATA {}\n")
-
-
-def test_bundle_model_excludes_directives():
-    b = stan_bundle.unpack(stan_bundle.pack("data { int N; }", {"N": 1}, ["x"]))
+    for k, v in expect_sampling.items():
+        assert b.sampling[k] == v
+    # the recovered model preserves source and strips the directive lines
+    assert model.strip().splitlines()[0] in b.model
     assert "//@" not in b.model
+
+
+@pytest.mark.parametrize(
+    "bundle, missing",
+    [
+        ('model {}\n//@ PARAMS ["x"]\n', "DATA"),
+        ("model {}\n//@ DATA {}\n", "PARAMS"),
+    ],
+)
+def test_bundle_missing_directives_raise(bundle, missing):
+    with pytest.raises(ValueError, match=missing):
+        stan_bundle.unpack(bundle)
 
 
 # ---------------------------------------------------------------------------
 # (b) data-block parsing
 # ---------------------------------------------------------------------------
 
-def test_data_block_vars_handles_constraints_and_arrays():
-    model = """
-    data {
-      int<lower=0> N;
-      vector<lower=0, upper=200>[N] kid_score;  // bounded
-      array[N] real y;
-      matrix[N, 2] X;
-    }
-    parameters { real beta; }
-    """
-    assert data_block_vars(model) == ["N", "kid_score", "y", "X"]
-
-
-def test_data_block_vars_no_block():
-    assert data_block_vars("parameters { real x; }") == []
+@pytest.mark.parametrize(
+    "model, expected",
+    [
+        # constraints, arrays, matrices, and line comments all strip to the name
+        (
+            """
+            data {
+              int<lower=0> N;
+              vector<lower=0, upper=200>[N] kid_score;  // bounded
+              array[N] real y;
+              matrix[N, 2] X;
+            }
+            parameters { real beta; }
+            """,
+            ["N", "kid_score", "y", "X"],
+        ),
+        # no data block at all -> empty
+        ("parameters { real x; }", []),
+    ],
+)
+def test_data_block_vars(model, expected):
+    assert data_block_vars(model) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -112,54 +128,68 @@ def test_stan_bundle_data_trimmed_to_declared():
 @_pdb
 def test_answer_spec_is_record_of_real_marginals():
     from eval.posteriordb import answer_spec, param_names
-    spec = answer_spec("eight_schools-eight_schools_noncentered")
+    name = "eight_schools-eight_schools_noncentered"
+    spec = answer_spec(name)
     assert spec["kind"] == "record"
-    assert set(spec["fields"]) == set(param_names("eight_schools-eight_schools_noncentered"))
+    assert set(spec["fields"]) == set(param_names(name))
     for f in spec["fields"].values():
         assert f == {"kind": "dist", "domain": "real"}
 
 
 @_pdb
 def test_reference_blocks_partition_chains():
-    from eval.posteriordb import reference_blocks, reference_chains
+    """Blocks are a disjoint partition of the gold chains (no draw lost/dup'd),
+    and the reference realization replays under the `reference` language by name."""
+    from eval.posteriordb import (problem_id, reference_blocks,
+                                  reference_chains, reference_realization)
     name = "eight_schools-eight_schools_noncentered"
     chains = reference_chains(name)
     blocks = reference_blocks(name, 5)
     assert len(blocks) == 5
-    # disjoint partition: total draws across blocks == total across chains
     total_chain = sum(len(c["mu"]) for c in chains)
     total_block = sum(len(b["mu"]) for b in blocks)
     assert total_block == total_chain
 
-
-@_pdb
-def test_reference_realization_code_is_name():
-    from eval.posteriordb import problem_id, reference_realization
     r = reference_realization("arma-arma11")
     assert r["language"] == "reference"
     assert r["code"] == "arma-arma11"
     assert r["problem_id"] == problem_id("arma-arma11")
 
 
-def test_committed_records_align():
-    """Committed posteriordb problems each have a stan + reference realization."""
-    probs = {r["problem_id"] for r in load_jsonl("data/problems/posteriordb.jsonl")}
-    if not probs:
+# ---------------------------------------------------------------------------
+# committed dataset rows
+# ---------------------------------------------------------------------------
+
+def test_committed_records_align_and_have_statements():
+    """Each committed posteriordb problem has a stan + reference realization and
+    a complete (given/model/query) statement."""
+    rows = load_jsonl("data/problems/posteriordb.jsonl")
+    if not rows:
         pytest.skip("no posteriordb problems committed yet")
+    probs = {r["problem_id"] for r in rows}
     stan = {r["problem_id"] for r in load_jsonl("data/realizations/stan.jsonl")}
     ref = {r["problem_id"] for r in load_jsonl("data/realizations/reference.jsonl")}
     assert probs <= stan, f"problems missing stan realization: {probs - stan}"
     assert probs <= ref, f"problems missing reference realization: {probs - ref}"
-
-
-def test_committed_problems_have_statements():
-    rows = load_jsonl("data/problems/posteriordb.jsonl")
-    if not rows:
-        pytest.skip("no posteriordb problems committed yet")
     for r in rows:
         s = r["statement"]
         assert s.get("given") and s.get("model") and s.get("query"), \
             f"incomplete statement: {r['problem_id']}"
+
+
+def test_statements_have_no_markdown_or_stan_leakage():
+    """Statements are plain prose that pin the model, not the Stan program."""
+    import re
+    rows = load_jsonl("data/problems/posteriordb.jsonl")
+    if not rows:
+        pytest.skip("no posteriordb problems committed yet")
+    md = re.compile(r"##|\*\*|^\s*[-*]\s", re.M)
+    kw = re.compile(r"positive_ordered|\bsimplex\b|ordered\[|\bvector\[|int<lower|"
+                    r"real<lower|transformed parameters|parameters\s*\{|generated quantities")
+    for r in rows:
+        txt = "\n".join(r["statement"][k] for k in ("given", "model", "query"))
+        assert not md.search(txt), f"markdown in statement: {r['problem_id']}"
+        assert not kw.search(txt), f"Stan keyword leak in statement: {r['problem_id']}"
 
 
 def test_excluded_problems_are_absent_and_documented():
@@ -177,21 +207,6 @@ def test_excluded_problems_are_absent_and_documented():
         assert rec.get("reason"), f"excluded {pid} has no reason"
         assert pid not in live, f"excluded {pid} still in live corpus"
         assert pid not in stan and pid not in ref, f"excluded {pid} still has a realization"
-
-
-def test_statements_have_no_markdown_or_stan_leakage():
-    """Statements are plain prose that pin the model, not the Stan program."""
-    import re
-    rows = load_jsonl("data/problems/posteriordb.jsonl")
-    if not rows:
-        pytest.skip("no posteriordb problems committed yet")
-    md = re.compile(r"##|\*\*|^\s*[-*]\s", re.M)
-    kw = re.compile(r"positive_ordered|\bsimplex\b|ordered\[|\bvector\[|int<lower|"
-                    r"real<lower|transformed parameters|parameters\s*\{|generated quantities")
-    for r in rows:
-        txt = "\n".join(r["statement"][k] for k in ("given", "model", "query"))
-        assert not md.search(txt), f"markdown in statement: {r['problem_id']}"
-        assert not kw.search(txt), f"Stan keyword leak in statement: {r['problem_id']}"
 
 
 # ---------------------------------------------------------------------------
