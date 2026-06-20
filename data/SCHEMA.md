@@ -64,12 +64,58 @@ is the canonical test; `load_corpus` excludes unavailable records from execution
 fold unavailable records into their reports as `{"status": "unavailable", "reason": ...}`.
 
 Live columns: `data/realizations/webppl.jsonl` (115/115) and
-`data/realizations/pyro.jsonl` (112 available + 3 unavailable). Gate results live in
-the report JSONLs (`data/problems/_gate_report.jsonl`, `_gate_solver_report.jsonl`,
+`data/realizations/pyro.jsonl` (112 available + 3 unavailable) over the probmods2 /
+dippl / forestdb problems; `data/realizations/stan.jsonl` + `reference.jsonl`
+(45/45 crosscheck-pass) over the posteriordb problems (see below). Gate results live in the report JSONLs
+(`data/problems/_gate_report.jsonl`, `_gate_solver_report.jsonl`,
 `_gate_crosscheck_report.jsonl`), keyed by problem_id — not on the realization record.
 
 A realization's code must produce `ANSWER` **via the language's own modeling/inference
 machinery**. Serializer limitations are binding bugs, never prompt workarounds.
+
+## Stan binding & posteriordb
+
+The `posteriordb` corpus (`data/problems/posteriordb.jsonl`, ingested by
+`eval/posteriordb.py` from the stan-dev/posteriordb clone) is a Bayesian-inference
+corpus: each problem is a model + dataset whose answer is the posterior. It uses two
+realization languages and a determination mode that differ from the WebPPL/Pyro corpora.
+**45 problems**, ingested from posteriordb's 46 gold-reference-draw posteriors;
+`arma11` was pruned as non-discriminable (recorded in
+`data/problems/_posteriordb_excluded.jsonl` with evidence — see below).
+
+- **Answer = posterior marginals.** A posterior over several real parameters cannot be a
+  `dist`/`realvec` (unsupported); it is respec'd to a `record` whose fields are the queried
+  parameters, each a `dist`/`real` marginal (a sample cloud, compared by Wasserstein-1).
+  Field names match the reference draws (`beta[1]`, `mu`, `theta[1]`, ...).
+- **Determination is model + data, not prose alone.** Stan is data-parametric: the literal
+  data values are supplied to the program at runtime, not listed in the statement. So the
+  prose pins the *model* and the *data interface*; the supplied data pins the numbers. The
+  solver writes a model; the harness runs it on the given data and reports each marginal.
+- **`stan` realization** (`data/realizations/stan.jsonl`) — a self-contained *bundle*
+  (`eval/stan_bundle.py`): the Stan model followed by `//@ DATA` / `//@ PARAMS` /
+  `//@ SAMPLING` comment directives. Embedding the data keeps the GT cache key correct and
+  lets the realization run without the posteriordb clone present. Executed by
+  `eval/executor_stan.py` (cmdstanpy NUTS; one fit per seed → `{param: [draws]}`; compiled
+  exes cached under `data/.stan_cache/`).
+- **`reference` realization** (`data/realizations/reference.jsonl`) — the GT column. Its
+  `code` is the posteriordb posterior name; `eval/executor_reference.py` replays the stored
+  gold reference draws (10 NUTS chains, R-hat ≈ 1), partitioning the chains into one block
+  per seed so the gate's k-seed noise floor is the reference posterior's own Monte-Carlo
+  error. The gold draws are the ground truth; the `stan` column is validated against them by
+  `gate crosscheck --language stan --reference reference`. Both languages slot into the
+  uniform `(code, seeds, timeout, workers)` executor interface and the GT cache unchanged.
+- **Per-problem sampling + discriminability.** The default `//@ SAMPLING` (4 chains, 1000
+  warmup/1000 draws) suffices for most; weakly-identified / multimodal posteriors (mixtures,
+  HMMs with label-switching) need the reference's heavier regime baked into their bundle
+  (more chains + warmup + the reference's adapt_delta, via `posteriordb.reference_sampling`).
+  A posterior whose per-marginal answer stays ill_posed even at the reference regime — its
+  honest cross-run GT floor exceeds the discriminability cap — is **pruned** via
+  `posteriordb.retire(pid, reason, evidence)`, which removes its problem + realizations and
+  appends an audit row to `data/problems/_posteriordb_excluded.jsonl`. (arma11: ARMA(1,1)
+  phi/theta weakly identified; floor plateaus ~1.5× the cap even at 10 chains × 10k warmup.)
+- **NB:** cmdstanpy can leave the process CWD changed on an errored fit (e.g. an ODE CVode
+  failure); the executor guards the boundary (`executor_stan._cwd_guard`) and all gate/cache
+  paths are repo-anchored absolutes so a leaked CWD can't drop report rows or misread sources.
 
 ## Answer algebra
 

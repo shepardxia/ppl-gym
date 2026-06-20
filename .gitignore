@@ -24,3 +24,5 @@ node_modules/
 # GT execution cache (content-addressed; regenerable)
 data/.gt_cache/
 data/.rework/
+# compiled Stan executables (regenerable from realization bundles)
+data/.stan_cache/

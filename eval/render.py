@@ -105,6 +105,39 @@ _LANG: dict[str, dict[str, str]] = {
         "field_value": "the computed value",
         "field_value_realvec": "the computed value (a list of numbers; a 1-D tensor is also accepted)",
     },
+    # Stan's binding is structural, not an `ANSWER` expression: the program *is*
+    # the model. The harness supplies the data (matching the model's `data`
+    # block), draws from the posterior with NUTS, and reports the marginal
+    # posterior of each named parameter.
+    "stan": {
+        "binding_prefix": "Write a complete Stan program for this model",
+        "realvec_suffix": "",
+        "dist_object": "a parameter whose marginal posterior is reported",
+        "dist_object_sentence": (
+            "Write a complete Stan program for this model. Declare a `data` block "
+            "matching the inputs described above; the harness supplies their values "
+            "and draws from the posterior with NUTS. Expose the queried quantity as "
+            "a parameter (in `parameters` or `transformed parameters`); its marginal "
+            "posterior distribution is what is reported."
+        ),
+        "dist_draws_sentence": (
+            "Write a complete Stan program for this model. Declare a `data` block "
+            "matching the inputs described above; the harness supplies their values "
+            "and draws from the posterior with NUTS. Expose the queried quantity as "
+            "a parameter; its marginal posterior distribution is what is reported."
+        ),
+        "record_intro": (
+            "Write a complete Stan program for this model. Declare a `data` block "
+            "matching the inputs described above; the harness supplies their values "
+            "and draws from the posterior with NUTS. Your `parameters` (or "
+            "`transformed parameters`) block must expose, under exactly these names, "
+            "each quantity whose marginal posterior is reported:"
+        ),
+        "field_dist_object": "a parameter; its marginal posterior distribution is reported",
+        "field_dist_draws": "a parameter; its marginal posterior distribution is reported",
+        "field_value": "a quantity computed in `generated quantities`",
+        "field_value_realvec": "a vector computed in `generated quantities`",
+    },
 }
 
 

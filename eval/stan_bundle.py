@@ -1,0 +1,87 @@
+"""Self-contained Stan realization bundle: model code + harness directives.
+
+A Stan model is data-parametric by design — the ``data`` block declares names,
+the values live in a separate file, and the run extracts named parameters. The
+rest of the eval machinery, however, threads a single ``code`` string through a
+uniform executor interface ``(code, seeds, timeout, workers)`` and caches GT
+runs by the hash of that string. To keep both invariants, a Stan realization is
+a *bundle*: the model code followed by three single-line comment directives that
+carry the data, the queried parameters, and the sampler configuration.
+
+    data { ... } parameters { ... } model { ... }
+
+    //@ DATA {"J": 8, "y": [...], "sigma": [...]}
+    //@ PARAMS ["mu", "tau", "theta[1]", ...]
+    //@ SAMPLING {"chains": 4, "iter_warmup": 1000, "iter_sampling": 1000}
+
+The directives are valid Stan line comments, so the bundle still reads (and
+compiles) as a Stan program; the executor strips them to recover the run inputs.
+Embedding data in the string means a different dataset yields a different cache
+key automatically — correctness for free.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+
+_DIRECTIVE_RE = re.compile(r"^//@\s+(DATA|PARAMS|SAMPLING)\s+(.*)$")
+
+DEFAULT_SAMPLING = {"chains": 4, "iter_warmup": 1000, "iter_sampling": 1000}
+
+
+@dataclass(frozen=True)
+class StanBundle:
+    model: str
+    data: dict
+    params: list[str]
+    sampling: dict
+
+
+def pack(model: str, data: dict, params: list[str],
+         sampling: dict | None = None) -> str:
+    """Assemble a bundle string from its parts."""
+    s = dict(DEFAULT_SAMPLING)
+    if sampling:
+        s.update(sampling)
+    lines = [
+        model.rstrip(),
+        "",
+        f"//@ DATA {json.dumps(data, separators=(',', ':'))}",
+        f"//@ PARAMS {json.dumps(params, separators=(',', ':'))}",
+        f"//@ SAMPLING {json.dumps(s, separators=(',', ':'))}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def unpack(bundle: str) -> StanBundle:
+    """Recover (model, data, params, sampling) from a bundle string.
+
+    The model is everything above the first directive line; directives may
+    appear in any order. Missing DATA/PARAMS raise; SAMPLING defaults.
+    """
+    model_lines: list[str] = []
+    found: dict[str, object] = {}
+    in_directives = False
+    for line in bundle.splitlines():
+        m = _DIRECTIVE_RE.match(line.strip())
+        if m:
+            in_directives = True
+            found[m.group(1)] = json.loads(m.group(2))
+            continue
+        if not in_directives:
+            model_lines.append(line)
+    if "DATA" not in found:
+        raise ValueError("Stan bundle missing //@ DATA directive")
+    if "PARAMS" not in found:
+        raise ValueError("Stan bundle missing //@ PARAMS directive")
+    sampling = dict(DEFAULT_SAMPLING)
+    if isinstance(found.get("SAMPLING"), dict):
+        sampling.update(found["SAMPLING"])  # type: ignore[arg-type]
+    return StanBundle(
+        model="\n".join(model_lines).strip() + "\n",
+        data=found["DATA"],          # type: ignore[arg-type]
+        params=list(found["PARAMS"]),  # type: ignore[arg-type]
+        sampling=sampling,
+    )

@@ -12,12 +12,21 @@ from pathlib import Path
 
 from eval.executor import execute_webppl_batch
 from eval.executor_pyro import execute_pyro_batch
+from eval.executor_reference import execute_reference_batch
+from eval.executor_stan import execute_stan_batch
 from eval.io import load_jsonl
 
 # Language bindings: the batched executor (run a set of seeds, answers out) per
 # realization language — the primitive used by GT collection. (For ad-hoc n=1 runs
 # import execute_webppl / execute_pyro directly from their executor modules.)
-BATCH_EXECUTORS = {"webppl": execute_webppl_batch, "pyro": execute_pyro_batch}
+#   stan      — compile + NUTS-sample a self-contained Stan bundle (posteriordb)
+#   reference — replay posteriordb's stored gold draws as the GT column
+BATCH_EXECUTORS = {
+    "webppl": execute_webppl_batch,
+    "pyro": execute_pyro_batch,
+    "stan": execute_stan_batch,
+    "reference": execute_reference_batch,
+}
 
 
 def batch_executor_for(language: str):
@@ -34,7 +43,8 @@ def batch_executor_for(language: str):
 # ---------------------------------------------------------------------------
 
 _PROBLEMS_DIR = Path("data/problems")
-_PROBLEM_FILES = ["probmods2.jsonl", "dippl.jsonl", "forestdb.jsonl"]
+_PROBLEM_FILES = ["probmods2.jsonl", "dippl.jsonl", "forestdb.jsonl",
+                  "posteriordb.jsonl"]
 
 
 def _realizations_path(language: str) -> Path:

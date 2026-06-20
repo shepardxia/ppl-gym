@@ -24,9 +24,17 @@ from eval.corpus import batch_executor_for
 
 # Bump a language's tag when its executor/serializer output format changes,
 # so stale cached runs are never read.
-EXECUTOR_VERSION = {"webppl": "wp1", "pyro": "py3"}  # py3: float64 default + import-free preamble
+EXECUTOR_VERSION = {
+    "webppl": "wp1",
+    "pyro": "py3",        # py3: float64 default + import-free preamble
+    "stan": "st1",        # cmdstanpy NUTS, record{param:[draws]}
+    "reference": "ref1",  # replayed posteriordb gold draws
+}
 
-_CACHE_DIR = Path("data/.gt_cache")
+# Absolute, repo-anchored: a concurrent Stan compile (cmdstanpy) transiently
+# chdir's the process, so a relative cache path could resolve against the wrong
+# CWD in a worker thread writing the cache. Absolute is CWD-independent.
+_CACHE_DIR = Path(__file__).resolve().parents[1] / "data/.gt_cache"
 
 
 def _disabled() -> bool:

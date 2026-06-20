@@ -472,7 +472,7 @@ class TestUnknownLanguage:
     def test_unknown_language_raises_value_error(self):
         p = _make_problem({"kind": "value", "domain": "real"})
         with pytest.raises(ValueError, match="unknown language"):
-            render_problem(p, language="stan")
+            render_problem(p, language="bugs")
 
     def test_unknown_language_raises_for_dist(self):
         p = _make_problem({"kind": "dist", "domain": "bool"})

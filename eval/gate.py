@@ -113,8 +113,12 @@ def _unavailable_rows(language: str, id_set: set | None, *, extra: dict | None =
 _DEFAULT_K_EXACT = 5
 _DEFAULT_K_DRAWS = 3
 
-# Data paths relative to repo root.
-_DEFAULT_REPORT = Path("data/problems/_gate_report.jsonl")
+# Absolute, repo-anchored data paths. The Stan executor (cmdstanpy) can leave the
+# process CWD changed on an errored fit, so report reads/writes via a relative
+# path could land in the wrong directory — silently dropping prior rows. Anchor
+# to the repo root so report merges are CWD-independent.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_DEFAULT_REPORT = _REPO_ROOT / "data/problems/_gate_report.jsonl"
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +317,7 @@ def _print_summary(reports: list[dict]) -> None:
 _SOLVE_MODEL = "claude-sonnet-4-6"
 _SOLVE_MAX_TOKENS = 4096
 _SOLVE_TEMPERATURE = 1.0
-_SOLVE_MANIFEST = Path("data/problems/_gate_solve_batch.json")
+_SOLVE_MANIFEST = _REPO_ROOT / "data/problems/_gate_solve_batch.json"
 
 
 def cmd_solve(args) -> None:
@@ -389,7 +393,7 @@ def cmd_solve(args) -> None:
 # Phase-B: judge (execute solver code, classify problems)
 # ---------------------------------------------------------------------------
 
-_SOLVER_REPORT = Path("data/problems/_gate_solver_report.jsonl")
+_SOLVER_REPORT = _REPO_ROOT / "data/problems/_gate_solver_report.jsonl"
 _MEMORIZATION_JACCARD_THRESHOLD = 0.6
 
 
@@ -753,7 +757,7 @@ def _print_solver_summary(reports: list[dict]) -> None:
 # Canonical GT answer export (feeds the web browser's overlay charts)
 # ---------------------------------------------------------------------------
 
-_GT_ANSWERS = Path("data/problems/_gt_answers.jsonl")
+_GT_ANSWERS = _REPO_ROOT / "data/problems/_gt_answers.jsonl"
 _ANSWER_MAX_SAMPLES = 500
 
 
@@ -812,7 +816,7 @@ def cmd_answers(args) -> None:
 # Cross-language consistency check
 # ---------------------------------------------------------------------------
 
-_CROSSCHECK_REPORT = Path("data/problems/_gate_crosscheck_report.jsonl")
+_CROSSCHECK_REPORT = _REPO_ROOT / "data/problems/_gate_crosscheck_report.jsonl"
 
 
 def crosscheck_problem(
@@ -885,6 +889,8 @@ def crosscheck_problem(
     status = "ill_posed" if v.get("ill_posed") else ("pass" if passed else "fail")
     return {
         "problem_id": pid,
+        "language": target_language,
+        "reference": reference_language,
         "status": status,
         "distance": round(v["distance"], 6),
         "tol": sym_tol,
