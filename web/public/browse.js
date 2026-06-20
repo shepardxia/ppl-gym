@@ -356,10 +356,10 @@
       body = `<div class="compare-error">` +
         `<div class="compare-error-hd">execution error</div>` +
         `<pre class="compare-error-msg">${escapeHtml(src.error)}</pre>` +
-        (src.code ? renderCodeBlock(src.code, 'webppl') : '') +
+        (src.code ? renderCodeBlock(src.code, src.codeLang || 'webppl') : '') +
         `</div>`;
     } else if (src.code) {
-      body = renderCodeBlock(src.code, 'webppl');
+      body = renderCodeBlock(src.code, src.codeLang || 'webppl');
     } else {
       body = `<div class="out-empty">(no code — this run didn't score this atom)</div>`;
     }
@@ -374,9 +374,51 @@
     `</div>`;
   }
 
+  // mean ± sd of a samples/distribution output (record-overlay summary on switch).
+  function momentsOf(o) {
+    if (!o) return null;
+    let vals, wts;
+    if (o.kind === 'samples') { vals = o.support.map(Number); wts = o.counts; }
+    else if (o.kind === 'distribution') { vals = o.support.map(Number); wts = o.probs; }
+    else return null;
+    let W = 0, m = 0;
+    for (let i = 0; i < vals.length; i++) { if (!Number.isFinite(vals[i])) return null; W += wts[i]; m += vals[i] * wts[i]; }
+    if (W <= 0) return null;
+    m /= W;
+    let v = 0;
+    for (let i = 0; i < vals.length; i++) v += wts[i] * (vals[i] - m) ** 2;
+    return { mean: m, sd: Math.sqrt(v / W) };
+  }
+  function fmtMoment(n) {
+    const abs = Math.abs(n);
+    if (abs !== 0 && (abs >= 1e5 || abs < 1e-3)) return n.toExponential(2);
+    if (abs >= 100) return n.toFixed(1);
+    if (abs >= 1) return n.toFixed(2);
+    return n.toFixed(3);
+  }
+
   function renderChartSection(a, b) {
     const aOut = a?.output;
     const bOut = b?.output;
+    // Record answers (posteriordb per-parameter posteriors): compact mean±sd
+    // summary across both columns. The server renders richer small-multiples on
+    // first paint; this is the on-switch view.
+    const aRec = aOut && aOut.kind === 'record';
+    const bRec = bOut && bOut.kind === 'record';
+    if (aRec || bRec) {
+      const fa = aRec ? aOut.fields : {};
+      const fb = bRec ? bOut.fields : {};
+      const names = Array.from(new Set([...Object.keys(fa), ...Object.keys(fb)]));
+      const cell = (mm) => mm ? `${fmtMoment(mm.mean)} <span class="rec-sd">± ${fmtMoment(mm.sd)}</span>` : '—';
+      const rows = names.map((n) =>
+        `<tr><td class="rec-sum-key">${escapeHtml(n)}</td>` +
+        `<td class="rec-sum-val rec-sum-a">${cell(momentsOf(fa[n]))}</td>` +
+        `<td class="rec-sum-val rec-sum-b">${cell(momentsOf(fb[n]))}</td></tr>`).join('');
+      return `<div class="section-title"><span class="section-title-num">02</span><span>answer overlay — mean ± sd</span></div>` +
+        `<div class="rec-summary"><table class="rec-sum-tbl"><thead><tr><th>parameter</th>` +
+        `<th class="rec-sum-a">${escapeHtml(a?.short ?? 'A')} mean±sd</th>` +
+        `<th class="rec-sum-b">${escapeHtml(b?.short ?? 'B')} mean±sd</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
     const aDist = aOut && (aOut.kind === 'distribution' || aOut.kind === 'samples');
     const bDist = bOut && (bOut.kind === 'distribution' || bOut.kind === 'samples');
     if (aDist || bDist) {

@@ -4,8 +4,8 @@ import Layout from '@/layouts/Layout.astro';
 import ProblemEntry from '@/components/ProblemEntry.astro';
 import type { Corpus, ProblemRecord } from '@/lib/problems';
 import {
-  loadAllProblemsGrouped, loadGtAnswers, CORPORA, CORPUS_META,
-  problemChapter, problemLeaf,
+  loadAllProblemsGrouped, loadGtAnswers, CORPORA, CORPUS_META, CORPUS_COLUMNS,
+  verificationBucket, problemChapter, problemLeaf,
 } from '@/lib/problems';
 import { SYSTEM_PROMPT_BASE, WEBPPL_PRIMER } from '@/lib/prompts';
 
@@ -22,29 +22,21 @@ export async function getStaticPaths() {
 const { corpus } = Astro.params as { corpus: Corpus };
 const { records } = Astro.props as { records: ProblemRecord[] };
 const meta = CORPUS_META[corpus];
+const cols = CORPUS_COLUMNS[corpus];
 const gtAnswers = await loadGtAnswers();
 const allGrouped = await loadAllProblemsGrouped();
 
 // ── Verification buckets (sidebar glyphs + filter chips) ──
 interface PBucket { id: string; label: string; glyph: string; tone: string; desc: string }
 const PBUCKETS: PBucket[] = [
-  { id: 'verified', label: 'verified',  glyph: '✓', tone: 'great', desc: 'solver gate accepted and pyro cross-verified' },
-  { id: 'partial',  label: 'partial',   glyph: '◐', tone: 'ok',    desc: 'one of the two gates verified' },
+  { id: 'verified', label: 'verified',  glyph: '✓', tone: 'great', desc: 'all applicable gates passed' },
+  { id: 'partial',  label: 'partial',   glyph: '◐', tone: 'ok',    desc: 'one of two gates verified' },
   { id: 'attention', label: 'attention', glyph: '✗', tone: 'bad',  desc: 'a gate failed or flagged this problem' },
   { id: 'na',       label: 'ungated',   glyph: '·', tone: 'na',    desc: 'missing gate data' },
 ];
 const PB_BY_ID = Object.fromEntries(PBUCKETS.map((b) => [b.id, b]));
 
-function bucketOf(r: ProblemRecord): string {
-  const solver = r.gateB?.status;
-  const cross = r.crosscheck?.status;
-  if (!solver && !cross) return 'na';
-  const sOk = solver === 'accept';
-  const xOk = cross === 'pass';
-  if (sOk && xOk) return 'verified';
-  if (sOk || xOk) return 'partial';
-  return 'attention';
-}
+const bucketOf = verificationBucket;
 
 const bucketCounts: Record<string, number> = Object.fromEntries(PBUCKETS.map((b) => [b.id, 0]));
 for (const r of records) bucketCounts[bucketOf(r)] += 1;
@@ -100,7 +92,7 @@ const firstId = records[0]?.problem.problem_id ?? '';
         </span>
         <span class="topbar-stat">
           <span class="topbar-stat-key">columns</span>
-          <span class="topbar-stat-val">webppl · pyro</span>
+          <span class="topbar-stat-val">{cols.a.short} · {cols.b.short}</span>
         </span>
       </div>
       <div class="topbar-right">
@@ -237,10 +229,10 @@ const firstId = records[0]?.problem.problem_id ?? '';
   <script type="application/json" id="ppl-meta" set:html={JSON.stringify({
     slug: corpus,
     firstAtomId: firstId,
-    primaryId: 'pyro',
-    runs: [{ id: 'pyro', short: 'pyro', label: 'Pyro realization' }],
+    primaryId: cols.b.lang,
+    runs: [{ id: cols.b.lang, short: cols.b.short, label: cols.b.label }],
   }).replace(/</g, '\\u003c')} />
   <script type="application/json" id="ppl-system-prompt" set:html={JSON.stringify(SYSTEM_PROMPT_BASE).replace(/</g, '\\u003c')} />
-  <script type="application/json" id="ppl-primer" set:html={JSON.stringify(WEBPPL_PRIMER).replace(/</g, '\\u003c')} />
+  <script type="application/json" id="ppl-primer" set:html={JSON.stringify(cols.primer === 'webppl' ? WEBPPL_PRIMER : '').replace(/</g, '\\u003c')} />
   <script src="/browse.js" is:inline></script>
 </Layout>

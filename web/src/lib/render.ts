@@ -281,6 +281,8 @@ export function renderChart(opts: {
   labelA: string;
   labelB: string;
   maxBars?: number;
+  width?: number;
+  height?: number;
 }): string {
   const { a, b, labelA, labelB, maxBars = 48 } = opts;
   const supportSet = new Set<string>();
@@ -321,7 +323,7 @@ export function renderChart(opts: {
   }
   const maxP = Math.max(0.01, ...aProbs, ...bProbs);
 
-  const w = 640, h = 240;
+  const w = opts.width ?? 640, h = opts.height ?? 240;
   const padL = 40, padR = 16, padT = 22, padB = 30;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
@@ -380,6 +382,92 @@ export function renderChart(opts: {
     `</svg>` +
     `</div>`
   );
+}
+
+// ─── Record overlay (per-parameter posteriors) ──────────────────────────────
+// posteriordb answers are records of per-parameter real marginals. For a narrow
+// record, lay out one small-multiple chart per parameter (reference vs stan on
+// the same bins). For a wide record (many parameters), fall back to a compact
+// mean ± sd summary so the page stays light.
+
+function momentsOf(o: RenderOutput): { mean: number; sd: number } | null {
+  if (!o) return null;
+  let vals: number[] = [];
+  let wts: number[] = [];
+  if (o.kind === 'samples') { vals = o.support.map(Number); wts = o.counts; }
+  else if (o.kind === 'distribution') { vals = o.support.map(Number); wts = o.probs; }
+  else return null;
+  let W = 0, m = 0;
+  for (let i = 0; i < vals.length; i++) {
+    if (!Number.isFinite(vals[i])) return null;
+    W += wts[i]; m += vals[i] * wts[i];
+  }
+  if (W <= 0) return null;
+  m /= W;
+  let v = 0;
+  for (let i = 0; i < vals.length; i++) v += wts[i] * (vals[i] - m) ** 2;
+  return { mean: m, sd: Math.sqrt(v / W) };
+}
+
+function fmtMoment(n: number): string {
+  const abs = Math.abs(n);
+  if (abs !== 0 && (abs >= 1e5 || abs < 1e-3)) return n.toExponential(2);
+  if (abs >= 100) return n.toFixed(1);
+  if (abs >= 1) return n.toFixed(2);
+  return n.toFixed(3);
+}
+
+function recordFields(o: RenderOutput): Record<string, RenderOutput> {
+  return o && o.kind === 'record' ? o.fields : {};
+}
+
+export function renderRecordOverlay(opts: {
+  a: RenderOutput; b: RenderOutput; labelA: string; labelB: string; maxCharts?: number;
+}): string {
+  const { a, b, labelA, labelB, maxCharts = 12 } = opts;
+  const fa = recordFields(a);
+  const fb = recordFields(b);
+  const names = Array.from(new Set([...Object.keys(fa), ...Object.keys(fb)]));
+  if (names.length === 0) return '<div class="out-empty">(no answer)</div>';
+
+  // Wide record → compact mean ± sd summary (one row per parameter).
+  if (names.length > maxCharts) {
+    const rows = names.map((n) => {
+      const ma = momentsOf(fa[n] ?? null);
+      const mb = momentsOf(fb[n] ?? null);
+      const cell = (m: { mean: number; sd: number } | null) =>
+        m ? `${fmtMoment(m.mean)} <span class="rec-sd">± ${fmtMoment(m.sd)}</span>` : '—';
+      return (
+        `<tr>` +
+        `<td class="rec-sum-key">${escapeHtml(n)}</td>` +
+        `<td class="rec-sum-val rec-sum-a">${cell(ma)}</td>` +
+        `<td class="rec-sum-val rec-sum-b">${cell(mb)}</td>` +
+        `</tr>`
+      );
+    }).join('');
+    return (
+      `<div class="rec-summary">` +
+      `<table class="rec-sum-tbl">` +
+      `<thead><tr><th>parameter</th>` +
+      `<th class="rec-sum-a">${escapeHtml(labelA)} mean±sd</th>` +
+      `<th class="rec-sum-b">${escapeHtml(labelB)} mean±sd</th></tr></thead>` +
+      `<tbody>${rows}</tbody></table>` +
+      `</div>`
+    );
+  }
+
+  // Narrow record → per-parameter small-multiple charts on shared bins.
+  const cells = names.map((n) => {
+    const [aB, bB] = prepareAtomOutputs([fa[n] ?? null, fb[n] ?? null]);
+    const body = (isDistLike(aB) || isDistLike(bB))
+      ? renderChart({
+          a: isDistLike(aB) ? aB : null, b: isDistLike(bB) ? bB : null,
+          labelA, labelB, width: 380, height: 150,
+        })
+      : renderValueOutput(aB ?? bB ?? null);
+    return `<div class="rec-cell"><div class="rec-cell-hd">${escapeHtml(n)}</div>${body}</div>`;
+  }).join('');
+  return `<div class="rec-overlay">${cells}</div>`;
 }
 
 // "Nice" axis step — round 1/2/5 × 10^k.

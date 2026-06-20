@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 /** Corpus file stems, in display order. */
-export const CORPORA = ['probmods2', 'dippl', 'forestdb'] as const;
+export const CORPORA = ['probmods2', 'dippl', 'forestdb', 'posteriordb'] as const;
 export type Corpus = (typeof CORPORA)[number];
 
 /** Display metadata per corpus — one home for names and descriptions. */
@@ -25,7 +25,54 @@ export const CORPUS_META: Record<Corpus, { label: string; description: string; s
     sourceUrl: 'http://forestdb.org',
     sourceName: 'forestdb.org',
   },
+  posteriordb: {
+    label: 'posteriordb',
+    description: 'Bayesian inference problems from posteriordb — applied regression, hierarchical, time-series, GP and ODE models, each with gold reference posterior draws. Realized in Stan.',
+    sourceUrl: 'https://github.com/stan-dev/posteriordb',
+    sourceName: 'stan-dev/posteriordb',
+  },
 };
+
+// ─── Per-corpus realization columns + verification model ─────────────────────
+// The browser compares two realization columns per problem: A (the ground-truth
+// side) and B (the realization cross-checked against A). For the WebPPL corpora
+// that is webppl (A) vs pyro (B); for posteriordb it is the gold reference draws
+// (A — stored, no code) vs the Stan realization (B). `codeLang: null` marks the
+// column as stored ground truth rather than program code.
+
+export interface ColumnSpec { lang: string; label: string; short: string; codeLang: string | null; }
+export interface CorpusColumns {
+  a: ColumnSpec;
+  b: ColumnSpec;
+  /** Whether a solver re-derivation gate (phase B) applies to this corpus. */
+  hasSolverGate: boolean;
+  /** Which solver primer to attach in the statement context, if any. */
+  primer: 'webppl' | null;
+}
+
+const WEBPPL_COLUMNS: CorpusColumns = {
+  a: { lang: 'webppl', label: 'WebPPL ground truth', short: 'webppl', codeLang: 'webppl' },
+  b: { lang: 'pyro', label: 'Pyro realization', short: 'pyro', codeLang: 'python' },
+  hasSolverGate: true,
+  primer: 'webppl',
+};
+
+export const CORPUS_COLUMNS: Record<Corpus, CorpusColumns> = {
+  probmods2: WEBPPL_COLUMNS,
+  dippl: WEBPPL_COLUMNS,
+  forestdb: WEBPPL_COLUMNS,
+  posteriordb: {
+    a: { lang: 'reference', label: 'gold reference posterior', short: 'reference', codeLang: null },
+    b: { lang: 'stan', label: 'Stan realization', short: 'stan', codeLang: 'stan' },
+    hasSolverGate: false,
+    primer: null,
+  },
+};
+
+/** All realization languages any corpus column references. */
+const REALIZATION_LANGS = Array.from(
+  new Set(Object.values(CORPUS_COLUMNS).flatMap((c) => [c.a.lang, c.b.lang])),
+);
 
 // Astro's build/prerender runs with CWD = the Astro project root (web/).
 // import.meta.url-based resolution BREAKS after Vite bundles this into
@@ -110,8 +157,10 @@ export interface GateCross {
 
 export interface ProblemRecord {
   problem: Problem;
-  realization: Realization | null;
-  pyroRealization: Realization | null;
+  /** Column A — the ground-truth side (webppl, or posteriordb gold reference). */
+  realizationA: Realization | null;
+  /** Column B — the realization cross-checked against A (pyro, or stan). */
+  realizationB: Realization | null;
   gateA: GatePhaseA | null;
   gateB: GatePhaseB | null;
   crosscheck: GateCross | null;
@@ -149,21 +198,24 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
   if (_cache) return _cache;
 
 
-  // Read all four files in parallel.
-  const [realizations, pyroRealizations, gateARows, gateBRows, crossRows, ...corpusRows] = await Promise.all([
-    readJsonl<Realization>(join(DATA_DIR, 'realizations', 'webppl.jsonl')),
-    readJsonl<Realization>(join(DATA_DIR, 'realizations', 'pyro.jsonl')),
+  // Read realization columns, gate reports, and every corpus file in parallel.
+  const [realLangRows, gateARows, gateBRows, crossRows, corpusRows] = await Promise.all([
+    Promise.all(REALIZATION_LANGS.map((l) =>
+      readJsonl<Realization>(join(DATA_DIR, 'realizations', `${l}.jsonl`)))),
     readJsonl<GatePhaseA>(join(DATA_DIR, 'problems', '_gate_report.jsonl')),
     readJsonl<GatePhaseB>(join(DATA_DIR, 'problems', '_gate_solver_report.jsonl')),
     readJsonl<GateCross>(join(DATA_DIR, 'problems', '_gate_crosscheck_report.jsonl')),
-    ...CORPORA.map((c) => readJsonl<Problem>(join(DATA_DIR, 'problems', `${c}.jsonl`))),
+    Promise.all(CORPORA.map((c) => readJsonl<Problem>(join(DATA_DIR, 'problems', `${c}.jsonl`)))),
   ]);
 
-  // Index by problem_id for O(1) joins.
-  const realizationByPid = new Map<string, Realization>();
-  for (const r of realizations) realizationByPid.set(r.problem_id, r);
-  const pyroByPid = new Map<string, Realization>();
-  for (const r of pyroRealizations) pyroByPid.set(r.problem_id, r);
+  // Index realizations by language → problem_id.
+  const realByLang = new Map<string, Map<string, Realization>>();
+  REALIZATION_LANGS.forEach((lang, i) => {
+    const m = new Map<string, Realization>();
+    for (const r of realLangRows[i]) m.set(r.problem_id, r);
+    realByLang.set(lang, m);
+  });
+  const realOf = (lang: string, pid: string) => realByLang.get(lang)?.get(pid) ?? null;
 
   const gateAByPid = new Map<string, GatePhaseA>();
   for (const r of gateARows) gateAByPid.set(r.problem_id, r);
@@ -177,6 +229,7 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
   const out: ProblemRecord[] = [];
   for (let i = 0; i < CORPORA.length; i++) {
     const corpus = CORPORA[i];
+    const cols = CORPUS_COLUMNS[corpus];
     const problems = corpusRows[i] as Problem[];
     for (const problem of problems) {
       // Skip retired problems.
@@ -184,8 +237,8 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
       out.push({
         problem,
         corpus,
-        realization: realizationByPid.get(problem.problem_id) ?? null,
-        pyroRealization: pyroByPid.get(problem.problem_id) ?? null,
+        realizationA: realOf(cols.a.lang, problem.problem_id),
+        realizationB: realOf(cols.b.lang, problem.problem_id),
         gateA: gateAByPid.get(problem.problem_id) ?? null,
         gateB: gateBByPid.get(problem.problem_id) ?? null,
         crosscheck: crossByPid.get(problem.problem_id) ?? null,
@@ -199,9 +252,28 @@ export async function loadAllProblems(): Promise<ProblemRecord[]> {
 
 export async function loadAllProblemsGrouped(): Promise<Record<Corpus, ProblemRecord[]>> {
   const all = await loadAllProblems();
-  const out = { probmods2: [] as ProblemRecord[], dippl: [] as ProblemRecord[], forestdb: [] as ProblemRecord[] };
+  const out = Object.fromEntries(CORPORA.map((c) => [c, [] as ProblemRecord[]])) as Record<Corpus, ProblemRecord[]>;
   for (const rec of all) out[rec.corpus].push(rec);
   return out;
+}
+
+/** Per-corpus verification bucket — solver+cross for the WebPPL corpora, cross
+ *  only for posteriordb (no solver gate). Single source of truth for the sidebar
+ *  glyphs, filter chips, and per-problem badges. */
+export function verificationBucket(r: ProblemRecord): 'verified' | 'partial' | 'attention' | 'na' {
+  const cols = CORPUS_COLUMNS[r.corpus];
+  const xOk = r.crosscheck?.status === 'pass';
+  const xBad = r.crosscheck != null && r.crosscheck.status !== 'pass' && r.crosscheck.status !== 'unavailable';
+  if (!cols.hasSolverGate) {
+    // cross-language gate is the whole verification story here
+    if (r.crosscheck == null || r.crosscheck.status === 'unavailable') return 'na';
+    return xOk ? 'verified' : 'attention';
+  }
+  const sOk = r.gateB?.status === 'accept';
+  if (!r.gateB && !r.crosscheck) return 'na';
+  if (sOk && xOk) return 'verified';
+  if (sOk || xOk) return 'partial';
+  return 'attention';
 }
 
 // ─── Slug helpers ────────────────────────────────────────────────────────────
@@ -244,6 +316,7 @@ export interface DatasetStats {
   bySpec: { chip: string; count: number }[];
   webpplVerified: number;
   pyroVerified: number;
+  stanVerified: number;
 }
 
 export async function datasetStats(): Promise<DatasetStats> {
@@ -267,7 +340,10 @@ export async function datasetStats(): Promise<DatasetStats> {
     byCorpus,
     bySpec,
     webpplVerified: all.filter((r) => r.gateB?.status === 'accept').length,
-    pyroVerified: all.filter((r) => r.crosscheck?.status === 'pass').length,
+    pyroVerified: all.filter((r) => r.crosscheck?.status === 'pass'
+      && (r.crosscheck.language === undefined || r.crosscheck.language === 'pyro')).length,
+    stanVerified: all.filter((r) => r.crosscheck?.status === 'pass'
+      && r.crosscheck.language === 'stan').length,
   };
 }
 

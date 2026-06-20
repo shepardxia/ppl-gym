@@ -1,10 +1,13 @@
 ---
 // One problem's detail entry — the AtomDetail design, problem-native.
-// Sources: 'gt' = WebPPL ground truth (A), 'pyro' = Pyro realization (B).
+// Two realization columns per corpus (CORPUS_COLUMNS): column A is the
+// ground-truth side (webppl, or posteriordb gold reference draws — stored, no
+// code), column B is the realization cross-checked against A (pyro, or stan).
 import type { ProblemRecord, GtAnswerRow } from '@/lib/problems';
-import { specChip, problemChapter, problemLeaf, canonicalToRenderOutput } from '@/lib/problems';
+import { specChip, problemChapter, problemLeaf, canonicalToRenderOutput, CORPUS_COLUMNS } from '@/lib/problems';
+import type { Corpus } from '@/lib/problems';
 import { statusLabel } from '@/lib/tones';
-import { renderCode, renderChart, renderValueOutput, isDistLike, atomDomId } from '@/lib/render';
+import { renderCode, renderChart, renderRecordOverlay, renderValueOutput, isDistLike, atomDomId } from '@/lib/render';
 import type { RenderOutput } from '@/lib/types';
 
 interface Props {
@@ -13,12 +16,15 @@ interface Props {
   corpus: string;
 }
 const { record, gtAnswers, corpus } = Astro.props;
-const { problem, realization, pyroRealization, gateA, gateB, crosscheck } = record;
+const { problem, realizationA, realizationB, gateA, gateB, crosscheck } = record;
 const pid = problem.problem_id;
+const cols = CORPUS_COLUMNS[corpus as Corpus];
 
 const chip = specChip(problem.answer_spec);
-const webpplOut = canonicalToRenderOutput(gtAnswers?.webppl?.answer) as RenderOutput;
-const pyroOut = canonicalToRenderOutput(gtAnswers?.pyro?.answer) as RenderOutput;
+const aOut = canonicalToRenderOutput(gtAnswers?.[cols.a.lang]?.answer) as RenderOutput;
+const bOut = canonicalToRenderOutput(gtAnswers?.[cols.b.lang]?.answer) as RenderOutput;
+const isRecord = (o: RenderOutput): o is { kind: 'record'; fields: Record<string, RenderOutput> } =>
+  !!o && o.kind === 'record';
 
 // tone mapping for the original bucket-badge classes (great/good/poor/bad/na)
 function gateTone(status: string | undefined): string {
@@ -37,23 +43,42 @@ function fmt(v: number | undefined | null): string {
   return v == null ? '—' : v.toFixed(4);
 }
 
+// A Stan realization is a bundle whose `//@ DATA {...}` directive embeds the full
+// dataset (for diamonds, an N×25 matrix — megabytes). The data is runtime input,
+// not model code, so the displayed/shipped code summarizes it; the full bundle
+// stays in stan.jsonl for execution. No-op for non-bundle code (webppl/pyro).
+function summarizeStanData(code: string): string {
+  return code.replace(/^(\/\/@ DATA )(.*)$/m, (_m, pre, json) => {
+    try {
+      const d = JSON.parse(json) as Record<string, unknown>;
+      const parts = Object.entries(d).map(([k, v]) => {
+        if (Array.isArray(v)) {
+          return Array.isArray(v[0]) ? `${k}: [${v.length}×${(v[0] as unknown[]).length} matrix]` : `${k}: [${v.length} values]`;
+        }
+        if (v && typeof v === 'object') return `${k}: {…}`;
+        return `${k}: ${JSON.stringify(v)}`;
+      });
+      return `${pre}{ ${parts.join(', ')} }   // values supplied at runtime`;
+    } catch {
+      return `${pre}{ … }   // values supplied at runtime`;
+    }
+  });
+}
+
 interface SourceData {
-  key: string; label: string; short: string;
-  code: string; output: RenderOutput; error: string | null;
-  bucket: null; tv: number | null; kl: null;
+  key: string; lang: string; label: string; short: string; codeLang: string | null;
+  code: string; output: RenderOutput; tv: number | null;
   unavailable: boolean; reason: string;
 }
-const gtSrc: SourceData = {
-  key: 'gt', label: 'WebPPL ground truth', short: 'webppl',
-  code: realization?.code ?? '', output: webpplOut, error: null,
-  bucket: null, tv: null, kl: null,
-  unavailable: realization?.available === false, reason: realization?.reason ?? '',
+const srcA: SourceData = {
+  key: 'gt', lang: cols.a.lang, label: cols.a.label, short: cols.a.short, codeLang: cols.a.codeLang,
+  code: summarizeStanData(realizationA?.code ?? ''), output: aOut, tv: null,
+  unavailable: realizationA?.available === false, reason: realizationA?.reason ?? '',
 };
-const pyroSrc: SourceData = {
-  key: 'pyro', label: 'Pyro realization', short: 'pyro',
-  code: pyroRealization?.code ?? '', output: pyroOut, error: null,
-  bucket: null, tv: crosscheck?.distance ?? null, kl: null,
-  unavailable: pyroRealization?.available === false, reason: pyroRealization?.reason ?? '',
+const srcB: SourceData = {
+  key: cols.b.lang, lang: cols.b.lang, label: cols.b.label, short: cols.b.short, codeLang: cols.b.codeLang,
+  code: summarizeStanData(realizationB?.code ?? ''), output: bOut, tv: crosscheck?.distance ?? null,
+  unavailable: realizationB?.available === false, reason: realizationB?.reason ?? '',
 };
 
 function escape(s: string): string {
@@ -69,12 +94,24 @@ function unavailableHtml(short: string, reason: string): string {
   );
 }
 
-// Render one source's column body. This is the single source of truth: the server
-// renders the initial grid with it AND embeds it in sourcePayload, so browse.js
-// reuses it on source-switch rather than re-implementing the same branches.
+function storedGtHtml(): string {
+  return (
+    `<div class="compare-stored">` +
+      `<div class="compare-stored-hd">stored ground truth</div>` +
+      `<p class="compare-stored-body">Gold reference posterior draws from posteriordb ` +
+      `(10 NUTS chains, R-hat ≈ 1). Not program code — the realized marginals are the ` +
+      `answer overlay below.</p>` +
+    `</div>`
+  );
+}
+
+// Render one source's column body. Single source of truth: the server renders the
+// initial grid with it AND embeds it in sourcePayload, so browse.js reuses it on
+// source-switch rather than re-implementing the branches.
 function srcBodyHtml(src: SourceData): string {
   if (src.unavailable) return unavailableHtml(src.short, src.reason);
-  if (src.code) return renderCode(src.code, src.key === 'pyro' ? 'python' : 'webppl');
+  if (src.codeLang === null) return storedGtHtml();           // stored-GT column (reference)
+  if (src.code) return renderCode(src.code, src.codeLang);
   return `<div class="out-empty">(no ${escape(src.short)} realization)</div>`;
 }
 
@@ -90,26 +127,38 @@ function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
     `</div>`
   );
 }
-const compareGridHtml = compareColHtml(gtSrc, 'a') + compareColHtml(pyroSrc, 'b');
+const compareGridHtml = compareColHtml(srcA, 'a') + compareColHtml(srcB, 'b');
 
-const distLike = isDistLike(webpplOut) || isDistLike(pyroOut);
+// Answer overlay (section 02). Records → per-parameter small multiples; single
+// distributions → the mirrored overlay; scalar values → side-by-side values.
 let chartSectionHtml = '';
-if (distLike) {
+if (isRecord(aOut) || isRecord(bOut)) {
   chartSectionHtml = (
     `<div class="compare-chart">` +
       `<div class="section-title">` +
         `<span class="section-title-num">02</span>` +
-        `<span>answer overlay — webppl vs pyro</span>` +
+        `<span>answer overlay — ${escape(cols.a.short)} vs ${escape(cols.b.short)}</span>` +
+        `<span class="section-title-meta">${escape(chip)}</span>` +
+      `</div>` +
+      renderRecordOverlay({ a: aOut, b: bOut, labelA: cols.a.short, labelB: cols.b.short }) +
+    `</div>`
+  );
+} else if (isDistLike(aOut) || isDistLike(bOut)) {
+  chartSectionHtml = (
+    `<div class="compare-chart">` +
+      `<div class="section-title">` +
+        `<span class="section-title-num">02</span>` +
+        `<span>answer overlay — ${escape(cols.a.short)} vs ${escape(cols.b.short)}</span>` +
         `<span class="section-title-meta">${escape(chip)}</span>` +
       `</div>` +
       renderChart({
-        a: isDistLike(webpplOut) ? webpplOut : null,
-        b: isDistLike(pyroOut) ? pyroOut : null,
-        labelA: 'webppl', labelB: 'pyro',
+        a: isDistLike(aOut) ? aOut : null,
+        b: isDistLike(bOut) ? bOut : null,
+        labelA: cols.a.short, labelB: cols.b.short,
       }) +
     `</div>`
   );
-} else if (webpplOut || pyroOut) {
+} else if (aOut || bOut) {
   chartSectionHtml = (
     `<div class="compare-chart">` +
       `<div class="section-title">` +
@@ -118,25 +167,27 @@ if (distLike) {
         `<span class="section-title-meta">${escape(chip)}</span>` +
       `</div>` +
       `<div class="compare-grid">` +
-        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-a">webppl</span></div>${renderValueOutput(webpplOut)}</div>` +
-        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-b">pyro</span></div>${renderValueOutput(pyroOut, '(no pyro answer export)')}</div>` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-a">${escape(cols.a.short)}</span></div>${renderValueOutput(aOut)}</div>` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-b">${escape(cols.b.short)}</span></div>${renderValueOutput(bOut, `(no ${escape(cols.b.short)} answer export)`)}</div>` +
       `</div>` +
     `</div>`
   );
 }
 
-// payload for browse.js source switching (gt + pyro). Available sources carry raw
-// `code` (browse.js highlights it on switch); unavailable sources carry the
-// server-rendered body (so the unavailable markup has a single source, with no
-// payload bloat from pre-rendering every code block).
+// payload for browse.js source switching. Available code columns carry raw `code`
+// + `codeLang` (browse.js highlights on switch); stored-GT and unavailable columns
+// carry the server-rendered body (single source, no payload bloat).
 const payloadEntry = (src: SourceData) => ({
   short: src.short, label: src.label, output: src.output, tv: src.tv,
-  ...(src.unavailable ? { bodyHtml: srcBodyHtml(src) } : { code: src.code }),
+  ...((src.unavailable || src.codeLang === null)
+    ? { bodyHtml: srcBodyHtml(src) }
+    : { code: src.code, codeLang: src.codeLang }),
 });
 const sourcePayload = {
-  gt: payloadEntry(gtSrc),
-  pyro: payloadEntry(pyroSrc),
+  gt: payloadEntry(srcA),
+  [srcB.key]: payloadEntry(srcB),
 };
+const primerOpen = cols.primer === 'webppl';
 ---
 
 <section class="detail" id={atomDomId(pid)} data-aid={pid}>
@@ -152,14 +203,16 @@ const sourcePayload = {
           <span class="meta-pill-key">answer</span>
           <span class="meta-pill-val">{chip}</span>
         </span>
-        <span class="meta-pill" title="solver re-derivation gate">
-          <span class="meta-pill-key">solver</span>
-          <span class={`bucket bucket-${solverTone} bucket-sm`}>
-            <span class="bucket-label">{gateB ? statusLabel(gateB.status) : '—'}</span>
+        {cols.hasSolverGate && (
+          <span class="meta-pill" title="solver re-derivation gate">
+            <span class="meta-pill-key">solver</span>
+            <span class={`bucket bucket-${solverTone} bucket-sm`}>
+              <span class="bucket-label">{gateB ? statusLabel(gateB.status) : '—'}</span>
+            </span>
           </span>
-        </span>
-        <span class="meta-pill" title="cross-language gate (pyro vs webppl GT)">
-          <span class="meta-pill-key">pyro</span>
+        )}
+        <span class="meta-pill" title={`cross-language gate (${cols.b.short} vs ${cols.a.short} GT)`}>
+          <span class="meta-pill-key">{cols.b.short}</span>
           <span class={`bucket bucket-${crossTone} bucket-sm`}>
             <span class="bucket-label">{crosscheck ? statusLabel(crosscheck.status) : '—'}</span>
             {crosscheck?.distance != null && <span class="bucket-tv">{fmt(crosscheck.distance)}</span>}
@@ -171,14 +224,14 @@ const sourcePayload = {
     <div class="detail-hd-strip">
       <span class="detail-hd-strip-lbl">sources</span>
       <button type="button" class="run-pill run-pill-gt is-source-a" data-source="gt"
-        title={"WebPPL ground truth\nclick: set as B (right) · shift-click: set as A (left)"}>
+        title={`${cols.a.label}\nclick: set as B (right) · shift-click: set as A (left)`}>
         <span class="run-pill-glyph">●</span>
-        <span class="run-pill-name">webppl</span>
+        <span class="run-pill-name">{cols.a.short}</span>
       </button>
-      <button type="button" class={`run-pill bucket-${crossTone} is-source-b`} data-source="pyro"
-        title={"Pyro realization — crosscheck vs WebPPL GT\nclick: set as B (right) · shift-click: set as A (left)"}>
+      <button type="button" class={`run-pill bucket-${crossTone} is-source-b`} data-source={srcB.key}
+        title={`${cols.b.label} — crosscheck vs ${cols.a.short} GT\nclick: set as B (right) · shift-click: set as A (left)`}>
         <span class="run-pill-glyph">◆</span>
-        <span class="run-pill-name">pyro</span>
+        <span class="run-pill-name">{cols.b.short}</span>
         {crosscheck?.distance != null && <span class="run-pill-tv">{fmt(crosscheck.distance)}</span>}
       </button>
     </div>
@@ -213,13 +266,15 @@ const sourcePayload = {
         </summary>
         <div class="collapse-body"><pre class="ctx-pre" data-sysprompt-placeholder>(system prompt loads here)</pre></div>
       </details>
-      <details class="collapse">
-        <summary>
-          <span class="collapse-title">WebPPL primer</span>
-          <span class="collapse-meta">solver context</span>
-        </summary>
-        <div class="collapse-body"><pre class="ctx-pre" data-primer-placeholder>(primer loads here)</pre></div>
-      </details>
+      {primerOpen && (
+        <details class="collapse">
+          <summary>
+            <span class="collapse-title">WebPPL primer</span>
+            <span class="collapse-meta">solver context</span>
+          </summary>
+          <div class="collapse-body"><pre class="ctx-pre" data-primer-placeholder>(primer loads here)</pre></div>
+        </details>
+      )}
     </div>
   </section>
 
@@ -227,7 +282,7 @@ const sourcePayload = {
     <div class="section-title">
       <span class="section-title-num">01</span>
       <span>realizations</span>
-      <span class="section-title-meta">comparing <code data-ab-label-a>webppl</code> vs <code data-ab-label-b>pyro</code></span>
+      <span class="section-title-meta">comparing <code data-ab-label-a>{cols.a.short}</code> vs <code data-ab-label-b>{cols.b.short}</code></span>
     </div>
     <div class="compare" data-compare>
       <div class="compare-grid" data-compare-grid set:html={compareGridHtml}></div>
@@ -245,28 +300,32 @@ const sourcePayload = {
         <tr><th>check</th><th>status</th><th>evidence</th></tr>
       </thead>
       <tbody>
+        {cols.hasSolverGate && (
+          <Fragment>
+            <tr>
+              <td><span class="other-runs-name">GT self-consistency</span></td>
+              <td>
+                <span class={`bucket bucket-${gateTone(gateA?.status)} bucket-xs`}>
+                  <span class="bucket-label">{gateA ? statusLabel(gateA.status) : '—'}</span>
+                </span>
+              </td>
+              <td class="num">floor {fmt(gateA?.floor)} ({gateA?.metric ?? '—'})</td>
+            </tr>
+            <tr>
+              <td><span class="other-runs-name">solver re-derivation</span></td>
+              <td>
+                <span class={`bucket bucket-${solverTone} bucket-xs`}>
+                  <span class="bucket-label">{gateB ? statusLabel(gateB.status) : '—'}</span>
+                </span>
+              </td>
+              <td class="num">
+                {gateB ? `${gateB.n_pass ?? '—'}/${gateB.n_solvers ?? 2} solvers · d=[${(gateB.distances ?? []).map((d) => d == null ? '—' : d.toFixed(3)).join(', ')}] · ${gateB.gate_model ?? ''}` : '—'}
+              </td>
+            </tr>
+          </Fragment>
+        )}
         <tr>
-          <td><span class="other-runs-name">GT self-consistency</span></td>
-          <td>
-            <span class={`bucket bucket-${gateTone(gateA?.status)} bucket-xs`}>
-              <span class="bucket-label">{gateA ? statusLabel(gateA.status) : '—'}</span>
-            </span>
-          </td>
-          <td class="num">floor {fmt(gateA?.floor)} ({gateA?.metric ?? '—'})</td>
-        </tr>
-        <tr>
-          <td><span class="other-runs-name">solver re-derivation</span></td>
-          <td>
-            <span class={`bucket bucket-${solverTone} bucket-xs`}>
-              <span class="bucket-label">{gateB ? statusLabel(gateB.status) : '—'}</span>
-            </span>
-          </td>
-          <td class="num">
-            {gateB ? `${gateB.n_pass ?? '—'}/${gateB.n_solvers ?? 2} solvers · d=[${(gateB.distances ?? []).map((d) => d == null ? '—' : d.toFixed(3)).join(', ')}] · ${gateB.gate_model ?? ''}` : '—'}
-          </td>
-        </tr>
-        <tr>
-          <td><span class="other-runs-name">cross-language (pyro)</span></td>
+          <td><span class="other-runs-name">cross-language ({cols.b.short} vs {cols.a.short})</span></td>
           <td>
             <span class={`bucket bucket-${crossTone} bucket-xs`}>
               <span class="bucket-label">{crosscheck ? statusLabel(crosscheck.status) : '—'}</span>
@@ -274,7 +333,7 @@ const sourcePayload = {
           </td>
           <td class={crosscheck?.status === 'unavailable' ? 'reason-cell' : 'num'}>
             {crosscheck?.status === 'unavailable'
-              ? (pyroRealization?.reason ?? 'documented gap — see realization')
+              ? (realizationB?.reason ?? 'documented gap — see realization')
               : crosscheck
                 ? `d=${fmt(crosscheck.distance)} ≤ tol ${fmt(crosscheck.tol)} · floors ${fmt(crosscheck.target_floor)}/${fmt(crosscheck.reference_floor)}`
                 : '—'}
@@ -323,6 +382,7 @@ const sourcePayload = {
   .stmt-field-hd:first-child { margin-top: 0; }
   .prompt-card p { margin: 0 0 4px; }
 
-  /* .compare-unavailable lives in global styles.css (used in set:html + browse.js). */
+  /* .compare-unavailable / .compare-stored / .rec-* live in global styles.css
+     (used in set:html + browse.js). */
   td.reason-cell { font: 12px var(--font-mono); line-height: 1.45; color: var(--fg-dim); white-space: normal; max-width: 56ch; }
 </style>
