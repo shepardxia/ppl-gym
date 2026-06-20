@@ -44,6 +44,8 @@ export interface ColumnSpec { lang: string; label: string; short: string; codeLa
 export interface CorpusColumns {
   a: ColumnSpec;
   b: ColumnSpec;
+  /** The language a solver for this corpus writes — selects the system prompt. */
+  solverLang: string;
   /** Whether a solver re-derivation gate (phase B) applies to this corpus. */
   hasSolverGate: boolean;
   /** Which solver primer to attach in the statement context, if any. */
@@ -53,6 +55,7 @@ export interface CorpusColumns {
 const WEBPPL_COLUMNS: CorpusColumns = {
   a: { lang: 'webppl', label: 'WebPPL ground truth', short: 'webppl', codeLang: 'webppl' },
   b: { lang: 'pyro', label: 'Pyro realization', short: 'pyro', codeLang: 'python' },
+  solverLang: 'webppl',
   hasSolverGate: true,
   primer: 'webppl',
 };
@@ -64,6 +67,7 @@ export const CORPUS_COLUMNS: Record<Corpus, CorpusColumns> = {
   posteriordb: {
     a: { lang: 'reference', label: 'gold reference posterior', short: 'reference', codeLang: null },
     b: { lang: 'stan', label: 'Stan realization', short: 'stan', codeLang: 'stan' },
+    solverLang: 'stan',
     hasSolverGate: false,
     primer: null,
   },
