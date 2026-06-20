@@ -37,7 +37,7 @@ import zipfile
 from functools import lru_cache
 from pathlib import Path
 
-from eval.io import load_jsonl, write_jsonl
+from eval.io import load_jsonl, merge_jsonl, write_jsonl
 from eval.stan_bundle import pack
 
 # ---------------------------------------------------------------------------
@@ -94,6 +94,7 @@ def model_code(name: str) -> str:
     return (_pdb_root() / "models" / "stan" / f"{model_name}.stan").read_text()
 
 
+@lru_cache(maxsize=None)
 def model_data(name: str) -> dict:
     data_name = posterior_info(name)["data_name"]
     return _read_zip_json(_pdb_root() / "data" / "data" / f"{data_name}.json.zip")
@@ -244,25 +245,14 @@ def problem_record(name: str, statement: dict | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Build CLI: emit problem/realization rows (merge by key, never clobber)
+# Build CLI: emit problem/realization rows (merge by problem_id, never clobber)
 # ---------------------------------------------------------------------------
 
-def _merge_write(path: Path, rows: list[dict], key) -> int:
-    merged: dict = {}
-    if path.exists():
-        for r in load_jsonl(path):
-            merged[key(r)] = r
-    for r in rows:
-        merged[key(r)] = r
-    write_jsonl(path, sorted(merged.values(), key=lambda r: str(key(r))))
-    return len(merged)
-
-
 def cmd_build(args) -> None:
-    names = args.ids or gold_posterior_names()
+    all_names = gold_posterior_names()
     # accept either posteriordb posterior names or problem_ids
-    by_pid = {problem_id(n): n for n in gold_posterior_names()}
-    resolved = [by_pid.get(n, n) for n in names]
+    by_pid = {problem_id(n): n for n in all_names}
+    resolved = [by_pid.get(n, n) for n in (args.ids or all_names)]
 
     # preserve existing authored statements when rebuilding
     existing_stmt: dict[str, dict] = {}
@@ -292,9 +282,9 @@ def cmd_build(args) -> None:
         for n, e in skipped:
             print(f"    {n}: {e[:100]}")
 
-    n_p = _merge_write(PROBLEMS_OUT, problems, lambda r: r["problem_id"])
-    n_s = _merge_write(STAN_OUT, stans, lambda r: r["problem_id"])
-    n_r = _merge_write(REFERENCE_OUT, refs, lambda r: r["problem_id"])
+    n_p = merge_jsonl(PROBLEMS_OUT, problems)
+    n_s = merge_jsonl(STAN_OUT, stans)
+    n_r = merge_jsonl(REFERENCE_OUT, refs)
     print(f"[posteriordb build] {len(resolved)} posterior(s) -> "
           f"problems={n_p} stan={n_s} reference={n_r}")
 
@@ -326,9 +316,9 @@ def authoring_material(name: str) -> dict:
 
 
 def cmd_material(args) -> None:
-    by_pid = {problem_id(n): n for n in gold_posterior_names()}
-    names = ([by_pid.get(x, x) for x in args.ids] if args.ids
-             else gold_posterior_names())
+    all_names = gold_posterior_names()
+    by_pid = {problem_id(n): n for n in all_names}
+    names = [by_pid.get(x, x) for x in args.ids] if args.ids else all_names
     mat = [authoring_material(n) for n in names]
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -347,11 +337,9 @@ def retire(pid: str, reason: str, *, evidence: dict | None = None) -> None:
     is documented, never silent. For posteriors the gate finds non-discriminable
     (the gold marginal itself trips the floor) or impossible to bind.
     """
-    for path, key in ((PROBLEMS_OUT, "problem_id"), (STAN_OUT, "problem_id"),
-                      (REFERENCE_OUT, "problem_id")):
+    for path in (PROBLEMS_OUT, STAN_OUT, REFERENCE_OUT):
         if path.exists():
-            rows = [r for r in load_jsonl(path) if r[key] != pid]
-            write_jsonl(path, rows)
+            write_jsonl(path, [r for r in load_jsonl(path) if r["problem_id"] != pid])
     led = load_jsonl(EXCLUDED_OUT) if EXCLUDED_OUT.exists() else []
     led = [r for r in led if r["problem_id"] != pid]
     led.append({"problem_id": pid, "status": "excluded", "reason": reason,

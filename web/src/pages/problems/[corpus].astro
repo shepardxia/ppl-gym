@@ -7,7 +7,7 @@ import {
   loadAllProblemsGrouped, loadGtAnswers, CORPORA, CORPUS_META, CORPUS_COLUMNS,
   verificationBucket, problemChapter, problemLeaf,
 } from '@/lib/problems';
-import { systemBaseFor, WEBPPL_PRIMER } from '@/lib/prompts';
+import { systemBaseFor, primerFor } from '@/lib/prompts';
 
 export const prerender = true;
 
@@ -233,6 +233,6 @@ const firstId = records[0]?.problem.problem_id ?? '';
     runs: [{ id: cols.b.lang, short: cols.b.short, label: cols.b.label }],
   }).replace(/</g, '\\u003c')} />
   <script type="application/json" id="ppl-system-prompt" set:html={JSON.stringify(systemBaseFor(cols.solverLang)).replace(/</g, '\\u003c')} />
-  <script type="application/json" id="ppl-primer" set:html={JSON.stringify(cols.primer === 'webppl' ? WEBPPL_PRIMER : '').replace(/</g, '\\u003c')} />
+  <script type="application/json" id="ppl-primer" set:html={JSON.stringify(primerFor(cols.primer)).replace(/</g, '\\u003c')} />
   <script src="/browse.js" is:inline></script>
 </Layout>

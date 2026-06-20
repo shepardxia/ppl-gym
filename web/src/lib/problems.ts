@@ -40,7 +40,13 @@ export const CORPUS_META: Record<Corpus, { label: string; description: string; s
 // (A — stored, no code) vs the Stan realization (B). `codeLang: null` marks the
 // column as stored ground truth rather than program code.
 
-export interface ColumnSpec { lang: string; label: string; short: string; codeLang: string | null; }
+export interface ColumnSpec {
+  lang: string; label: string; short: string;
+  /** Code language for syntax highlighting, or null for a stored-GT column (no code). */
+  codeLang: string | null;
+  /** For a stored-GT column (codeLang === null): the body text shown in place of code. */
+  storedGt?: string;
+}
 export interface CorpusColumns {
   a: ColumnSpec;
   b: ColumnSpec;
@@ -48,8 +54,8 @@ export interface CorpusColumns {
   solverLang: string;
   /** Whether a solver re-derivation gate (phase B) applies to this corpus. */
   hasSolverGate: boolean;
-  /** Which solver primer to attach in the statement context, if any. */
-  primer: 'webppl' | null;
+  /** Name of the solver primer to show in the statement context (key into PRIMERS), or null. */
+  primer: string | null;
 }
 
 const WEBPPL_COLUMNS: CorpusColumns = {
@@ -65,7 +71,11 @@ export const CORPUS_COLUMNS: Record<Corpus, CorpusColumns> = {
   dippl: WEBPPL_COLUMNS,
   forestdb: WEBPPL_COLUMNS,
   posteriordb: {
-    a: { lang: 'reference', label: 'gold reference posterior', short: 'reference', codeLang: null },
+    a: {
+      lang: 'reference', label: 'gold reference posterior', short: 'reference', codeLang: null,
+      storedGt: 'Gold reference posterior draws from posteriordb (10 NUTS chains, R-hat ≈ 1). '
+        + 'Not program code — the realized marginals are the answer overlay below.',
+    },
     b: { lang: 'stan', label: 'Stan realization', short: 'stan', codeLang: 'stan' },
     solverLang: 'stan',
     hasSolverGate: false,
@@ -267,7 +277,6 @@ export async function loadAllProblemsGrouped(): Promise<Record<Corpus, ProblemRe
 export function verificationBucket(r: ProblemRecord): 'verified' | 'partial' | 'attention' | 'na' {
   const cols = CORPUS_COLUMNS[r.corpus];
   const xOk = r.crosscheck?.status === 'pass';
-  const xBad = r.crosscheck != null && r.crosscheck.status !== 'pass' && r.crosscheck.status !== 'unavailable';
   if (!cols.hasSolverGate) {
     // cross-language gate is the whole verification story here
     if (r.crosscheck == null || r.crosscheck.status === 'unavailable') return 'na';
@@ -312,51 +321,13 @@ export function specChip(spec: AnswerSpec): string {
   return d ? `${k}/${d}` : k;
 }
 
-// ─── Dataset stats (computed, used by the landing page and problems hub) ────
-
-export interface DatasetStats {
-  total: number;
-  byCorpus: { corpus: Corpus; count: number }[];
-  bySpec: { chip: string; count: number }[];
-  webpplVerified: number;
-  pyroVerified: number;
-  stanVerified: number;
-}
-
-export async function datasetStats(): Promise<DatasetStats> {
-  const all = await loadAllProblems();
-  const byCorpus = CORPORA.map((c) => ({
-    corpus: c,
-    count: all.filter((r) => r.corpus === c).length,
-  }));
-  const specCounts = new Map<string, number>();
-  for (const r of all) {
-    const k = specKind(r.problem.answer_spec) === 'record'
-      ? 'record'
-      : specChip(r.problem.answer_spec);
-    specCounts.set(k, (specCounts.get(k) ?? 0) + 1);
-  }
-  const bySpec = [...specCounts.entries()]
-    .map(([chip, count]) => ({ chip, count }))
-    .sort((a, b) => b.count - a.count);
-  return {
-    total: all.length,
-    byCorpus,
-    bySpec,
-    webpplVerified: all.filter((r) => r.gateB?.status === 'accept').length,
-    pyroVerified: all.filter((r) => r.crosscheck?.status === 'pass'
-      && (r.crosscheck.language === undefined || r.crosscheck.language === 'pyro')).length,
-    stanVerified: all.filter((r) => r.crosscheck?.status === 'pass'
-      && r.crosscheck.language === 'stan').length,
-  };
-}
-
 // ─── Grouping helpers (sidebar) ──────────────────────────────────────────────
+
+const _CORPUS_PREFIX = new RegExp('^(' + CORPORA.join('|') + ')-');
 
 /** 'probmods2-conditioning/ex5.b' → 'conditioning' (chapter within corpus). */
 export function problemChapter(problemId: string): string {
-  const head = problemId.split('/')[0];
-  return head.replace(/^(probmods2|dippl|forestdb)-/, '');
+  return problemId.split('/')[0].replace(_CORPUS_PREFIX, '');
 }
 
 /** 'probmods2-conditioning/ex5.b' → 'ex5.b'. */

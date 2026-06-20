@@ -10,16 +10,13 @@ import pyroBase from '../../../data/prompts/pyro_system_base.txt?raw';
 import stanBase from '../../../data/prompts/stan_system_base.txt?raw';
 // @ts-expect-error Vite plugin types for ?raw imports
 import webpplPrimer from '../../../data/prompts/webppl_primer.txt?raw';
-// @ts-expect-error Vite plugin types for ?raw imports
-import pyroPrimer from '../../../data/prompts/pyro_primer.txt?raw';
 
 export const PROMPT_VERSION = 'v2-atom';
 
 const trim = (s: string) => s.replace(/\n+$/, '');
 
-export const SYSTEM_PROMPT_BASE: string = trim(webpplBase as string);   // default (webppl corpora)
+export const SYSTEM_PROMPT_BASE: string = trim(webpplBase as string);   // legacy /c/ browser
 export const WEBPPL_PRIMER: string = trim(webpplPrimer as string);
-export const PYRO_PRIMER: string = trim(pyroPrimer as string);
 
 // Per-solver-language system base — what a solver writing that language is told.
 const SYSTEM_BASE: Record<string, string> = {
@@ -28,9 +25,17 @@ const SYSTEM_BASE: Record<string, string> = {
   stan: trim(stanBase as string),
 };
 
+/** Solver primers by name (CorpusColumns.primer keys into this). Only webppl has one. */
+export const PRIMERS: Record<string, string> = { webppl: WEBPPL_PRIMER };
+
 /** System prompt shown for a corpus whose solver writes `lang`. */
 export function systemBaseFor(lang: string): string {
-  return SYSTEM_BASE[lang] ?? SYSTEM_PROMPT_BASE;
+  return SYSTEM_BASE[lang] ?? SYSTEM_BASE.webppl;
+}
+
+/** Primer text for a primer name, or '' if none. */
+export function primerFor(name: string | null): string {
+  return name ? (PRIMERS[name] ?? '') : '';
 }
 
 /** Run names follow `<model>-<primer-flag>-...` convention; "noprimer" → false. */

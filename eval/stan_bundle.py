@@ -63,14 +63,11 @@ def unpack(bundle: str) -> StanBundle:
     """
     model_lines: list[str] = []
     found: dict[str, object] = {}
-    in_directives = False
     for line in bundle.splitlines():
         m = _DIRECTIVE_RE.match(line.strip())
         if m:
-            in_directives = True
             found[m.group(1)] = json.loads(m.group(2))
-            continue
-        if not in_directives:
+        elif not found:   # model is everything before the first directive
             model_lines.append(line)
     if "DATA" not in found:
         raise ValueError("Stan bundle missing //@ DATA directive")

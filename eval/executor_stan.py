@@ -17,6 +17,7 @@ import hashlib
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from pathlib import Path
 
 from eval.stan_bundle import unpack
@@ -47,11 +48,13 @@ def _cwd_guard():
             os.chdir(saved)
 
 
+@lru_cache(maxsize=None)
 def _compiled_model(model_code: str):
     """Compile (or reuse) a CmdStanModel for this model source.
 
-    Keyed by the model hash; cmdstanpy skips recompilation when the exe is
-    newer than the .stan source, so this is a no-op after the first build.
+    Keyed by the model hash on disk; cmdstanpy skips recompilation when the exe
+    is newer than the .stan source. The in-process lru_cache also memoizes the
+    CmdStanModel so repeat runs of the same model skip the file read + reconstruct.
     """
     from cmdstanpy import CmdStanModel
 
@@ -79,7 +82,7 @@ def _one_fit(model, data: dict, params: list[str], sampling: dict,
             max_treedepth=sampling.get("max_treedepth", 10),
             show_progress=False,
             show_console=False,
-            timeout=timeout if timeout else None,
+            timeout=timeout or None,
         )
         df = fit.draws_pd()
         out: dict[str, list] = {}

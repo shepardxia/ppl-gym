@@ -31,3 +31,20 @@ def write_jsonl(path: Path | str, records: list[dict], *, append: bool = False):
             f.write(json.dumps(rec) + "\n")
 
 
+def merge_jsonl(path: Path | str, rows: list[dict], key=lambda r: r["problem_id"]) -> int:
+    """Upsert `rows` into the JSONL at `path` keyed by `key`, write sorted, return count.
+
+    The single merge-by-key writer: partial re-runs update their own rows and
+    never clobber others. Shared by the gate report writers and posteriordb ingestion.
+    """
+    p = Path(path)
+    merged: dict = {}
+    if p.exists():
+        for r in load_jsonl(p):
+            merged[key(r)] = r
+    for r in rows:
+        merged[key(r)] = r
+    write_jsonl(p, sorted(merged.values(), key=lambda r: str(key(r))))
+    return len(merged)
+
+

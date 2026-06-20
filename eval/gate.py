@@ -49,7 +49,7 @@ from eval.generate_batch import (
     submit_batch,
     wait_for_batch,
 )
-from eval.io import load_jsonl, write_jsonl
+from eval.io import load_jsonl, merge_jsonl, write_jsonl
 from eval.prompt import system_prompt
 from eval.render import render_problem
 
@@ -80,19 +80,8 @@ def code_jaccard(generated: str, ground_truth: str) -> float:
 # ---------------------------------------------------------------------------
 
 def _merge_report(report_path: Path, new_rows: list[dict]) -> int:
-    """Load existing report at `report_path`, update rows for judged ids, write sorted.
-
-    Returns total row count after merge.
-    """
-    merged: dict[str, dict] = {}
-    if report_path.exists():
-        for row in load_jsonl(report_path):
-            merged[row["problem_id"]] = row
-    for r in new_rows:
-        merged[r["problem_id"]] = r
-    sorted_rows = sorted(merged.values(), key=lambda r: r["problem_id"])
-    write_jsonl(report_path, sorted_rows)
-    return len(sorted_rows)
+    """Merge report rows by problem_id (partial re-runs never clobber others)."""
+    return merge_jsonl(report_path, new_rows)
 
 
 def _unavailable_rows(language: str, id_set: set | None, *, extra: dict | None = None) -> list[dict]:

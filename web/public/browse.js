@@ -375,6 +375,9 @@
   }
 
   // mean ± sd of a samples/distribution output (record-overlay summary on switch).
+  // NOTE: momentsOf/fmtMoment are an intentional client copy of the canonical
+  // versions in src/lib/render.ts (server build) — browse.js is a static file and
+  // cannot import. Keep the two in sync if the formula/formatting changes.
   function momentsOf(o) {
     if (!o) return null;
     let vals, wts;

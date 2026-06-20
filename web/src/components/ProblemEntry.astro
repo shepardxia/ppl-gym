@@ -68,17 +68,19 @@ function summarizeStanData(code: string): string {
 interface SourceData {
   key: string; lang: string; label: string; short: string; codeLang: string | null;
   code: string; output: RenderOutput; tv: number | null;
-  unavailable: boolean; reason: string;
+  unavailable: boolean; reason: string; storedGt: string;
 }
 const srcA: SourceData = {
   key: 'gt', lang: cols.a.lang, label: cols.a.label, short: cols.a.short, codeLang: cols.a.codeLang,
   code: summarizeStanData(realizationA?.code ?? ''), output: aOut, tv: null,
   unavailable: realizationA?.available === false, reason: realizationA?.reason ?? '',
+  storedGt: cols.a.storedGt ?? '',
 };
 const srcB: SourceData = {
   key: cols.b.lang, lang: cols.b.lang, label: cols.b.label, short: cols.b.short, codeLang: cols.b.codeLang,
   code: summarizeStanData(realizationB?.code ?? ''), output: bOut, tv: crosscheck?.distance ?? null,
   unavailable: realizationB?.available === false, reason: realizationB?.reason ?? '',
+  storedGt: cols.b.storedGt ?? '',
 };
 
 function escape(s: string): string {
@@ -94,13 +96,11 @@ function unavailableHtml(short: string, reason: string): string {
   );
 }
 
-function storedGtHtml(): string {
+function storedGtHtml(description: string): string {
   return (
     `<div class="compare-stored">` +
       `<div class="compare-stored-hd">stored ground truth</div>` +
-      `<p class="compare-stored-body">Gold reference posterior draws from posteriordb ` +
-      `(10 NUTS chains, R-hat ≈ 1). Not program code — the realized marginals are the ` +
-      `answer overlay below.</p>` +
+      `<p class="compare-stored-body">${escape(description)}</p>` +
     `</div>`
   );
 }
@@ -110,7 +110,7 @@ function storedGtHtml(): string {
 // source-switch rather than re-implementing the branches.
 function srcBodyHtml(src: SourceData): string {
   if (src.unavailable) return unavailableHtml(src.short, src.reason);
-  if (src.codeLang === null) return storedGtHtml();           // stored-GT column (reference)
+  if (src.codeLang === null) return storedGtHtml(src.storedGt);   // stored-GT column (reference)
   if (src.code) return renderCode(src.code, src.codeLang);
   return `<div class="out-empty">(no ${escape(src.short)} realization)</div>`;
 }
@@ -187,7 +187,7 @@ const sourcePayload = {
   gt: payloadEntry(srcA),
   [srcB.key]: payloadEntry(srcB),
 };
-const primerOpen = cols.primer === 'webppl';
+const hasPrimer = cols.primer != null;
 ---
 
 <section class="detail" id={atomDomId(pid)} data-aid={pid}>
@@ -266,10 +266,10 @@ const primerOpen = cols.primer === 'webppl';
         </summary>
         <div class="collapse-body"><pre class="ctx-pre" data-sysprompt-placeholder>(system prompt loads here)</pre></div>
       </details>
-      {primerOpen && (
+      {hasPrimer && (
         <details class="collapse">
           <summary>
-            <span class="collapse-title">WebPPL primer</span>
+            <span class="collapse-title">{cols.primer} primer</span>
             <span class="collapse-meta">solver context</span>
           </summary>
           <div class="collapse-body"><pre class="ctx-pre" data-primer-placeholder>(primer loads here)</pre></div>
