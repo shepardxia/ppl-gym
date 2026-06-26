@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { readJsonl } from './jsonl';
 
 /** Corpus file stems, in display order. */
 export const CORPORA = ['probmods2', 'dippl', 'forestdb', 'posteriordb'] as const;
@@ -157,7 +157,7 @@ export interface GatePhaseB {
 
 export interface GateCross {
   problem_id: string;
-  status: 'pass' | 'fail' | 'ill_posed' | 'error';
+  status: 'pass' | 'fail' | 'ill_posed' | 'error' | 'unavailable';
   distance?: number;
   tol?: number;
   target_floor?: number;
@@ -179,29 +179,6 @@ export interface ProblemRecord {
   gateB: GatePhaseB | null;
   crosscheck: GateCross | null;
   corpus: Corpus;
-}
-
-// ─── JSONL reader ────────────────────────────────────────────────────────────
-
-async function readJsonl<T>(absPath: string): Promise<T[]> {
-  let text: string;
-  try {
-    text = await readFile(absPath, 'utf8');
-  } catch (e: any) {
-    if (e?.code === 'ENOENT') return [];
-    throw e;
-  }
-  const out: T[] = [];
-  for (const line of text.split('\n')) {
-    const t = line.trim();
-    if (!t) continue;
-    try {
-      out.push(JSON.parse(t) as T);
-    } catch {
-      // skip malformed lines
-    }
-  }
-  return out;
 }
 
 // ─── Loaders ────────────────────────────────────────────────────────────────
@@ -349,13 +326,7 @@ let _gtCache: Map<string, Record<string, GtAnswerRow>> | null = null;
 
 export async function loadGtAnswers(): Promise<Map<string, Record<string, GtAnswerRow>>> {
   if (_gtCache) return _gtCache;
-  const rows = await (async () => {
-    const { readFile } = await import('node:fs/promises');
-    try {
-      const text = await readFile(join(DATA_DIR, 'problems', '_gt_answers.jsonl'), 'utf8');
-      return text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as GtAnswerRow);
-    } catch { return [] as GtAnswerRow[]; }
-  })();
+  const rows = await readJsonl<GtAnswerRow>(join(DATA_DIR, 'problems', '_gt_answers.jsonl'));
   const out = new Map<string, Record<string, GtAnswerRow>>();
   for (const r of rows) {
     if (!out.has(r.problem_id)) out.set(r.problem_id, {});

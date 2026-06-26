@@ -16,7 +16,6 @@ Iterate per source.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 import time
@@ -197,12 +196,6 @@ def format_answer_shape_hint(shape) -> str:
     returns (we know it because we ran it). Telling the LLM the shape
     is task spec — like a return-type annotation — not answer leakage.
     """
-    if isinstance(shape, dict) and "record" in shape:
-        fields = ", ".join(
-            f"{k}: <{format_answer_shape_hint(v)}>"
-            for k, v in shape["record"].items()
-        )
-        return f"a record like {{{fields}}}"
     if shape == "distribution":
         return ("a single distribution object (e.g., the return of "
                 "`Infer({...}, function() { ... })`)")

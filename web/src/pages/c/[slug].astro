@@ -4,8 +4,7 @@ import AtomDetail from '@/components/AtomDetail.astro';
 import {
   COLLECTIONS, loadCollection, loadAllCollections, groupKey, atomLeaf,
 } from '@/lib/atoms';
-import { BUCKETS, BUCKET_BY_ID, STRIP_ORDER, bucketFor, fmtTV, glyphFor, toneFor, maxTV } from '@/lib/buckets';
-import { atomDomId } from '@/lib/render';
+import { BUCKET_BY_ID, STRIP_ORDER, bucketFor, fmtTV, maxTV } from '@/lib/buckets';
 import { SYSTEM_PROMPT_BASE, WEBPPL_PRIMER } from '@/lib/prompts';
 import type { Atom, Bucket, ScoredRun } from '@/lib/types';
 

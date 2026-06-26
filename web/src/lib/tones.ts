@@ -1,8 +1,8 @@
 // The status vocabulary is owned by the Python layer (eval/algebra.py judge
 // statuses; eval/gate.py phase-A/B statuses) and documented in data/SCHEMA.md
 // §Status vocabulary. Keep this mapping in sync when a status is added.
-// Status tone mapping for problem-centric gate statuses.
-// Replaces buckets.ts entirely — the old TV/bucket vocabulary does not apply here.
+// Status tone mapping for problem-centric gate statuses. Supersedes the TV/bucket
+// vocabulary for these pages; buckets.ts is retained for the legacy /c/ atom browser.
 
 export type StatusTone = 'good' | 'warn' | 'bad' | 'na';
 

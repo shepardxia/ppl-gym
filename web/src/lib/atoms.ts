@@ -1,6 +1,7 @@
-import { readFile, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Atom, Collection, RunMeta, ScoredRun } from './types';
+import { readJsonl } from './jsonl';
 
 // Astro's build/prerender runs with CWD = the Astro project root (web/).
 const REPO_ROOT = resolve(process.cwd(), '..');
@@ -38,27 +39,6 @@ export const COLLECTIONS: Collection[] = [
   },
 ];
 
-async function readJsonl<T>(absPath: string): Promise<T[]> {
-  let text: string;
-  try {
-    text = await readFile(absPath, 'utf8');
-  } catch (e: any) {
-    if (e?.code === 'ENOENT') return [];
-    throw e;
-  }
-  const out: T[] = [];
-  for (const line of text.split('\n')) {
-    const t = line.trim();
-    if (!t) continue;
-    try {
-      const rec = JSON.parse(t) as T;
-      out.push(rec);
-    } catch {
-      // skip summary trailer or malformed line
-    }
-  }
-  return out;
-}
 
 async function loadAllRuns(): Promise<Record<string, Record<string, ScoredRun>>> {
   let entries;

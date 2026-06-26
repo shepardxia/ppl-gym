@@ -7,7 +7,7 @@ import type { ProblemRecord, GtAnswerRow } from '@/lib/problems';
 import { specChip, problemChapter, problemLeaf, canonicalToRenderOutput, CORPUS_COLUMNS } from '@/lib/problems';
 import type { Corpus } from '@/lib/problems';
 import { statusLabel } from '@/lib/tones';
-import { renderCode, renderChart, renderRecordOverlay, renderValueOutput, isDistLike, atomDomId } from '@/lib/render';
+import { renderCode, renderChart, renderRecordOverlay, renderValueOutput, isDistLike, atomDomId, escapeHtml } from '@/lib/render';
 import type { RenderOutput } from '@/lib/types';
 
 interface Props {
@@ -83,15 +83,11 @@ const srcB: SourceData = {
   storedGt: cols.b.storedGt ?? '',
 };
 
-function escape(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 function unavailableHtml(short: string, reason: string): string {
   return (
     `<div class="compare-unavailable">` +
-      `<div class="compare-unavailable-hd">unavailable in ${escape(short)}</div>` +
-      `<p class="compare-unavailable-reason">${escape(reason)}</p>` +
+      `<div class="compare-unavailable-hd">unavailable in ${escapeHtml(short)}</div>` +
+      `<p class="compare-unavailable-reason">${escapeHtml(reason)}</p>` +
     `</div>`
   );
 }
@@ -100,7 +96,7 @@ function storedGtHtml(description: string): string {
   return (
     `<div class="compare-stored">` +
       `<div class="compare-stored-hd">stored ground truth</div>` +
-      `<p class="compare-stored-body">${escape(description)}</p>` +
+      `<p class="compare-stored-body">${escapeHtml(description)}</p>` +
     `</div>`
   );
 }
@@ -112,7 +108,7 @@ function srcBodyHtml(src: SourceData): string {
   if (src.unavailable) return unavailableHtml(src.short, src.reason);
   if (src.codeLang === null) return storedGtHtml(src.storedGt);   // stored-GT column (reference)
   if (src.code) return renderCode(src.code, src.codeLang);
-  return `<div class="out-empty">(no ${escape(src.short)} realization)</div>`;
+  return `<div class="out-empty">(no ${escapeHtml(src.short)} realization)</div>`;
 }
 
 function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
@@ -120,8 +116,8 @@ function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
   return (
     `<div class="compare-col">` +
       `<div class="compare-col-hd">` +
-        `<span class="compare-col-tag ${tagClass}">${escape(src.short)}</span>` +
-        `<span class="compare-col-label">${escape(src.label)}</span>` +
+        `<span class="compare-col-tag ${tagClass}">${escapeHtml(src.short)}</span>` +
+        `<span class="compare-col-label">${escapeHtml(src.label)}</span>` +
       `</div>` +
       srcBodyHtml(src) +
     `</div>`
@@ -137,8 +133,8 @@ if (isRecord(aOut) || isRecord(bOut)) {
     `<div class="compare-chart">` +
       `<div class="section-title">` +
         `<span class="section-title-num">02</span>` +
-        `<span>answer overlay — ${escape(cols.a.short)} vs ${escape(cols.b.short)}</span>` +
-        `<span class="section-title-meta">${escape(chip)}</span>` +
+        `<span>answer overlay — ${escapeHtml(cols.a.short)} vs ${escapeHtml(cols.b.short)}</span>` +
+        `<span class="section-title-meta">${escapeHtml(chip)}</span>` +
       `</div>` +
       renderRecordOverlay({ a: aOut, b: bOut, labelA: cols.a.short, labelB: cols.b.short }) +
     `</div>`
@@ -148,8 +144,8 @@ if (isRecord(aOut) || isRecord(bOut)) {
     `<div class="compare-chart">` +
       `<div class="section-title">` +
         `<span class="section-title-num">02</span>` +
-        `<span>answer overlay — ${escape(cols.a.short)} vs ${escape(cols.b.short)}</span>` +
-        `<span class="section-title-meta">${escape(chip)}</span>` +
+        `<span>answer overlay — ${escapeHtml(cols.a.short)} vs ${escapeHtml(cols.b.short)}</span>` +
+        `<span class="section-title-meta">${escapeHtml(chip)}</span>` +
       `</div>` +
       renderChart({
         a: isDistLike(aOut) ? aOut : null,
@@ -164,11 +160,11 @@ if (isRecord(aOut) || isRecord(bOut)) {
       `<div class="section-title">` +
         `<span class="section-title-num">02</span>` +
         `<span>answer</span>` +
-        `<span class="section-title-meta">${escape(chip)}</span>` +
+        `<span class="section-title-meta">${escapeHtml(chip)}</span>` +
       `</div>` +
       `<div class="compare-grid">` +
-        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-a">${escape(cols.a.short)}</span></div>${renderValueOutput(aOut)}</div>` +
-        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-b">${escape(cols.b.short)}</span></div>${renderValueOutput(bOut, `(no ${escape(cols.b.short)} answer export)`)}</div>` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-a">${escapeHtml(cols.a.short)}</span></div>${renderValueOutput(aOut)}</div>` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-b">${escapeHtml(cols.b.short)}</span></div>${renderValueOutput(bOut, `(no ${escapeHtml(cols.b.short)} answer export)`)}</div>` +
       `</div>` +
     `</div>`
   );

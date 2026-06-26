@@ -166,7 +166,9 @@ def main():
     print(f"Found {len(model_files)} model files")
 
     records = []
-    skipped = {"non_webppl": 0, "no_code": 0, "stub_or_link": 0}
+    # scrape_model returns None for both stub/link and no-code models; main()
+    # can't tell them apart, so both fall under no_code.
+    skipped = {"non_webppl": 0, "no_code": 0}
 
     for filepath in model_files:
         text = filepath.read_text(encoding="utf-8")

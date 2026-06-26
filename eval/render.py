@@ -33,8 +33,8 @@ from eval.algebra import Spec, _has_draws_field, parse_spec
 # provides the fragments consumed by _contract_for/_field_contract below.
 _LANG: dict[str, dict[str, str]] = {
     "webppl": {
-        # prefix for `var ANSWER = <expression>;`
-        "binding_prefix": "End your program with `var ANSWER = <expression>;`",
+        # full top-level value sentence
+        "value_sentence": "End your program with `var ANSWER = <expression>;` where `<expression>` evaluates to the computed value.",
         # realvec variant suffix
         "realvec_suffix": "For a real-valued vector, ANSWER should be a list of numbers.",
         # dist object description (used after "where `<expression>` is ")
@@ -69,7 +69,7 @@ _LANG: dict[str, dict[str, str]] = {
         "field_value_realvec": "the computed value (a list of numbers)",
     },
     "pyro": {
-        "binding_prefix": "End your program with a top-level assignment `ANSWER = <expression>`",
+        "value_sentence": "End your program with a top-level assignment `ANSWER = <expression>` where `<expression>` evaluates to the computed value.",
         "realvec_suffix": "a list of numbers (a 1-D tensor is also accepted)",
         "dist_object": (
             "the posterior distribution — either a dict mapping each outcome to its "
@@ -110,7 +110,12 @@ _LANG: dict[str, dict[str, str]] = {
     # block), draws from the posterior with NUTS, and reports the marginal
     # posterior of each named parameter.
     "stan": {
-        "binding_prefix": "Write a complete Stan program for this model",
+        "value_sentence": (
+            "Write a complete Stan program for this model. Declare a `data` block "
+            "matching the inputs described above; the harness supplies their values "
+            "and draws from the posterior with NUTS. Compute the queried quantity in "
+            "a `generated quantities` block; its posterior is what is reported."
+        ),
         "realvec_suffix": "",
         "dist_object": "a parameter whose marginal posterior is reported",
         "dist_object_sentence": (
@@ -186,12 +191,9 @@ def _contract_for(spec: Spec, language: str = "webppl") -> str:
     lang = _LANG[language]
 
     if spec.kind == "value":
-        prefix = lang["binding_prefix"]
-        if spec.domain == "realvec":
-            realvec = lang["realvec_suffix"]
-            binding = f"{prefix} where `<expression>` evaluates to the computed value. {realvec}"
-        else:
-            binding = f"{prefix} where `<expression>` evaluates to the computed value."
+        binding = lang["value_sentence"]
+        if spec.domain == "realvec" and lang["realvec_suffix"]:
+            binding = binding + " " + lang["realvec_suffix"]
         support_text = _support_contract(spec)
         if support_text:
             return binding + " " + support_text

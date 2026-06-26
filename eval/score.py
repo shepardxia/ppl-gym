@@ -35,12 +35,12 @@ from threading import Event, Lock
 from eval.algebra import AlgebraError, parse_spec, status_of, verdict
 from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
 from eval.corpus import load_corpus
-from eval.gate import (
-    collect_gt_answers,
+from eval.harness import (
     code_jaccard,
+    collect_gt_answers,
     execute_candidate_answer,
 )
-from eval.io import load_jsonl, write_jsonl
+from eval.io import load_jsonl
 
 
 def _score_one(
@@ -189,8 +189,8 @@ def run_scoring(
     gt_cache: dict = {}
     gt_cache_lock = Lock()
 
-    # Clamp per-problem workers so total WebPPL processes stay bounded:
-    # workers (problems in flight) × mc_workers = max WebPPL processes.
+    # Clamp per-problem workers so total executor subprocesses stay bounded:
+    # workers (problems in flight) × mc_workers = max executor processes.
     mc_workers = max(1, DEFAULT_MC_WORKERS // max(1, workers))
 
     scored_rows: list[dict] = []

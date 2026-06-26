@@ -1,7 +1,7 @@
 """Single source of truth for loading the problem-centric dataset.
 
 Provides:
-  load_problems   — problems from data/problems/{probmods2,dippl,forestdb}.jsonl
+  load_problems   — problems from data/problems/{probmods2,dippl,forestdb,posteriordb}.jsonl
   load_realizations — realizations from data/realizations/<language>.jsonl
   load_corpus     — joined (problems, realizations) intersection
 """
@@ -60,7 +60,7 @@ def load_problems(
     *,
     include_retired: bool = False,
 ) -> list[dict]:
-    """Load all non-retired problems from the three canonical corpus files.
+    """Load all non-retired problems from the four canonical corpus files.
 
     Parameters
     ----------

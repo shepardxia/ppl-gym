@@ -11,8 +11,6 @@ import stanBase from '../../../data/prompts/stan_system_base.txt?raw';
 // @ts-expect-error Vite plugin types for ?raw imports
 import webpplPrimer from '../../../data/prompts/webppl_primer.txt?raw';
 
-export const PROMPT_VERSION = 'v2-atom';
-
 const trim = (s: string) => s.replace(/\n+$/, '');
 
 export const SYSTEM_PROMPT_BASE: string = trim(webpplBase as string);   // legacy /c/ browser
@@ -36,9 +34,4 @@ export function systemBaseFor(lang: string): string {
 /** Primer text for a primer name, or '' if none. */
 export function primerFor(name: string | null): string {
   return name ? (PRIMERS[name] ?? '') : '';
-}
-
-/** Run names follow `<model>-<primer-flag>-...` convention; "noprimer" → false. */
-export function runHasPrimer(runName: string): boolean {
-  return !runName.toLowerCase().includes('noprimer');
 }

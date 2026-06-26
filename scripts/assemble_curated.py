@@ -16,13 +16,13 @@ For each row, this script:
   1. Reads the source markdown file and splits into code blocks.
   2. Concatenates the listed blocks (in the order the agent listed them,
      deduped while preserving first-seen order).
-  3. Prepends display/canvas/print stubs so source code referencing
-     viz/Draw/drawLines/drawPoints/print runs cleanly in a headless
-     executor (those calls become no-ops; the value of ANSWER is unaffected).
+  3. (Display/canvas/print stubs — viz/Draw/drawLines/drawPoints/print — are
+     supplied by the executor as preloaded WebPPL packages, NOT prepended here;
+     WebPPL forbids top-level field assignment, so the shims must be packages.)
   4. If `wrap_target` is provided, appends `var ANSWER = (<wrap_target>);`
-     literally. Otherwise falls back to `wrap_with_answer` (which uses a
-     regex-based last-expression scan; fragile when source has multiple
-     top-level statements).
+     literally. Otherwise falls back to `wrap_with_answer`, whose last-expression
+     scan is a char-level parser (find_last_expression); fragile when source has
+     multiple top-level statements.
   5. Runs via `execute_webppl(seed=42)`.
   6. On success: emits the full atom record to --output.
      On failure: emits the broken record to --broken with the error and
@@ -47,8 +47,7 @@ from eval.executor import execute_webppl
 from eval.io import write_jsonl
 from eval.algebra import canonicalize, distance, parse_spec
 from scripts.extract_atoms import (
-    classify_answer, find_last_expression, split_blocks,
-    strip_viz_print, wrap_with_answer,
+    classify_answer, split_blocks, wrap_with_answer,
 )
 
 def empirical_tv(gen_samples: list, gt_samples: list) -> float | None:

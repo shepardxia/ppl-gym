@@ -11,7 +11,6 @@ once a crosscheck has run.
 from __future__ import annotations
 
 import argparse
-import statistics
 
 from eval.algebra import (_W1_FLOOR_CAP_FRAC, _pooled_spread, distance,
                           noise_floor, parse_spec)
@@ -25,9 +24,12 @@ def _real_by_id(language: str) -> dict:
 
 def diagnose(pid: str, *, timeout: int = DEFAULT_TIMEOUT) -> dict:
     """Per-field floor/spread/cross-distance breakdown for one problem."""
-    from eval.gate import collect_gt_answers  # lazy: gate -> corpus -> posteriordb
+    from eval.harness import collect_gt_answers
 
-    prob = next(p for p in load_problems({pid}) if p["problem_id"] == pid)
+    rows = load_problems({pid})
+    if not rows:
+        raise ValueError(f"no problem with id {pid!r}")
+    prob = rows[0]
     spec = parse_spec(prob["answer_spec"])
     stan_real = _real_by_id("stan")[pid]
     ref_real = _real_by_id("reference")[pid]
@@ -46,7 +48,7 @@ def diagnose(pid: str, *, timeout: int = DEFAULT_TIMEOUT) -> dict:
         ref_floor = noise_floor(rfield, fspec)
         spread = _pooled_spread(sfield + rfield, fspec)
         cap = _W1_FLOOR_CAP_FRAC * spread
-        # representative cross-column distance (median run vs median run)
+        # representative cross-column distance (middle run by index, each side)
         cross = distance(rfield[len(rfield) // 2], sfield[len(sfield) // 2], fspec).value
         fields.append({
             "field": name,

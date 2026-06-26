@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -31,57 +31,39 @@ from eval.algebra import (
     AlgebraError,
     answer_to_dict,
     Spec,
-    _has_draws_field,
     agreement,
-    canonicalize,
     noise_floor,
     parse_spec,
     verdict,
 )
 from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
 from eval.corpus import load_corpus, load_problems, load_unavailable
-from eval.gt_cache import cached_run
+from eval.harness import (
+    _DEFAULT_K_DRAWS,
+    _DEFAULT_K_EXACT,
+    code_jaccard,
+    collect_gt_answers,
+    execute_candidate_answer,
+)
 from eval.generate_batch import (
     build_requests,
     cid_to_problem_slot,
     collect_results,
-    problem_id_to_cid,
     submit_batch,
     wait_for_batch,
 )
-from eval.io import load_jsonl, merge_jsonl, write_jsonl
-from eval.prompt import system_prompt
+from eval.io import merge_jsonl
 from eval.render import render_problem
 
-
-# ---------------------------------------------------------------------------
-# Code similarity (eval/metrics.py was ripped in P2; logic lives here only).
-# ---------------------------------------------------------------------------
-
-def _normalize_code(code: str) -> str:
-    code = re.sub(r"//.*$", "", code, flags=re.MULTILINE)
-    code = re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
-    code = re.sub(r"\s+", " ", code).strip()
-    code = re.sub(r";\s*$", "", code)
-    return code
-
-
-def code_jaccard(generated: str, ground_truth: str) -> float:
-    g = set(_normalize_code(generated).split())
-    t = set(_normalize_code(ground_truth).split())
-    if not g and not t:
-        return 1.0
-    if not g or not t:
-        return 0.0
-    return len(g & t) / len(g | t)
 
 # ---------------------------------------------------------------------------
 # Report merge helper (shared by phaseA and cmd_judge)
 # ---------------------------------------------------------------------------
 
-def _merge_report(report_path: Path, new_rows: list[dict]) -> int:
-    """Merge report rows by problem_id (partial re-runs never clobber others)."""
-    return merge_jsonl(report_path, new_rows)
+def _merge_report(report_path: Path, new_rows: list[dict],
+                  key=lambda r: r["problem_id"]) -> int:
+    """Merge report rows by `key` (partial re-runs never clobber others)."""
+    return merge_jsonl(report_path, new_rows, key=key)
 
 
 def _unavailable_rows(language: str, id_set: set | None, *, extra: dict | None = None) -> list[dict]:
@@ -98,79 +80,12 @@ def _unavailable_rows(language: str, id_set: set | None, *, extra: dict | None =
     ]
 
 
-# Defaults match SCHEMA.md: k=5 for non-draws, k=3 for draws blocks.
-_DEFAULT_K_EXACT = 5
-_DEFAULT_K_DRAWS = 3
-
 # Absolute, repo-anchored data paths. The Stan executor (cmdstanpy) can leave the
 # process CWD changed on an errored fit, so report reads/writes via a relative
 # path could land in the wrong directory — silently dropping prior rows. Anchor
 # to the repo root so report merges are CWD-independent.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_REPORT = _REPO_ROOT / "data/problems/_gate_report.jsonl"
-
-
-# ---------------------------------------------------------------------------
-# GT answer collection (reusable by Phase B)
-# ---------------------------------------------------------------------------
-
-def collect_gt_answers(
-    code: str,
-    spec: Spec,
-    *,
-    language: str = "webppl",
-    base_seed: int = DEFAULT_SEED,
-    n_draws: int = DEFAULT_N_MC,
-    k_exact: int = _DEFAULT_K_EXACT,
-    k_draws: int = _DEFAULT_K_DRAWS,
-    timeout: int = DEFAULT_TIMEOUT,
-    workers: int = DEFAULT_MC_WORKERS,
-    use_cache: bool = True,
-) -> tuple[list, int]:
-    """Collect k independent canonical GT answers for (code, spec).
-
-    Single path: every needed seed runs through the language's batched executor,
-    cached by content hash (eval.gt_cache). Returns (canonical_answers, n_runs).
-
-    Draws protocol (spec has draws anywhere):
-      One GT answer = a block of n_draws seeded draws; k_draws blocks over
-      contiguous seeds base_seed .. base_seed + k_draws*n_draws - 1. A block
-      with at least one good draw is kept; an all-failed block raises.
-    Non-draws (exact/enum/parametric):
-      One GT answer = one run; seeds base_seed .. base_seed + k_exact - 1.
-      Any failed run raises RuntimeError (a healthy GT succeeds on every seed).
-
-    AlgebraError (canonicalization) and RuntimeError propagate; gate_problem()
-    catches both.
-    """
-    if _has_draws_field(spec):
-        total = k_draws * n_draws
-        seeds = [base_seed + i for i in range(total)]
-        raw = cached_run(language, code, seeds, timeout=timeout,
-                         workers=workers, use_cache=use_cache)
-        canonical: list = []
-        n_runs = 0
-        for block in range(k_draws):
-            chunk = [a for a in raw[block * n_draws:(block + 1) * n_draws]
-                     if a is not None]
-            if not chunk:
-                raise RuntimeError("all runs failed")
-            n_runs += len(chunk)
-            canonical.append(canonicalize(chunk, spec))
-        return canonical, n_runs
-
-    seeds = [base_seed + i for i in range(k_exact)]
-    # The batch runs all k_exact seeds in one subprocess under a single timeout,
-    # so `timeout` is the per-seed budget. Measured: right-sized MCMC realizations
-    # (NUTS within the authoring ranges) take 15-55s for a single seed on the
-    # heavier hierarchical / sequence models — independent of sample count, which
-    # is per-leapfrog cost — so k of them cannot share one per-program budget.
-    # Draws blocks above keep the flat budget (many fast forward-samples).
-    raw = cached_run(language, code, seeds, timeout=timeout * len(seeds),
-                     workers=workers, use_cache=use_cache)
-    if any(a is None for a in raw):
-        raise RuntimeError("execution failed")
-    return [canonicalize(a, spec) for a in raw], k_exact
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +235,8 @@ def cmd_solve(args) -> None:
 
     print(f"[solve] {len(problems)} problem(s) → {len(problems) * 2} requests")
 
-    requests = build_requests(problems, language=args.language, model=args.model)
+    requests = build_requests(problems, language=args.language, model=args.model,
+                              max_tokens=_SOLVE_MAX_TOKENS, temperature=_SOLVE_TEMPERATURE)
 
     # Build manifest (always, whether dry-run or not)
     manifest = {
@@ -384,33 +300,6 @@ def cmd_solve(args) -> None:
 
 _SOLVER_REPORT = _REPO_ROOT / "data/problems/_gate_solver_report.jsonl"
 _MEMORIZATION_JACCARD_THRESHOLD = 0.6
-
-
-def execute_candidate_answer(
-    code: str,
-    spec: Spec,
-    *,
-    base_seed: int = DEFAULT_SEED,
-    n_draws: int = DEFAULT_N_MC,
-    timeout: int = DEFAULT_TIMEOUT,
-    workers: int = DEFAULT_MC_WORKERS,
-    language: str = "webppl",
-) -> object:
-    """Execute candidate code and return a canonical answer.
-
-    The k=1 case of collect_gt_answers: draws-spec problems collect n_draws
-    seeded runs into one canonical answer; others run once at base_seed.
-    Candidate (solver) code is one-off, so its runs are not cached.
-    """
-    answers, _ = collect_gt_answers(
-        code, spec,
-        language=language,
-        base_seed=base_seed, n_draws=n_draws,
-        k_exact=1, k_draws=1,
-        timeout=timeout, workers=workers,
-        use_cache=False,
-    )
-    return answers[0]
 
 
 def _judge_problem_b(
@@ -789,16 +678,13 @@ def cmd_answers(args) -> None:
     unavail_rows = _unavailable_rows(args.language, id_set)
 
     out = Path(args.report) if args.report else _GT_ANSWERS
-    merged: dict[tuple, dict] = {}
-    if out.exists():
-        for row in load_jsonl(out):
-            merged[(row["problem_id"], row["language"])] = row
-    for r in rows + unavail_rows:
-        merged[(r["problem_id"], r["language"])] = r
-    write_jsonl(out, sorted(merged.values(), key=lambda r: (r["problem_id"], r["language"])))
+    # Composite key: one file holds every language's answers, keyed (problem_id,
+    # language) so a re-run of one language never clobbers another's rows.
+    total = merge_jsonl(out, rows + unavail_rows,
+                        key=lambda r: (r["problem_id"], r["language"]))
     n_err = sum(1 for r in rows if "error" in r)
     print(f"\n[answers] {out}: {len(rows)} written ({n_err} errors, "
-          f"{len(unavail_rows)} unavailable), {len(merged)} total rows")
+          f"{len(unavail_rows)} unavailable), {total} total rows")
 
 
 # ---------------------------------------------------------------------------
@@ -933,7 +819,10 @@ def cmd_crosscheck(args) -> None:
     all_rows = reports + unavail_rows
 
     report_path = Path(args.report) if args.report else _CROSSCHECK_REPORT
-    total = _merge_report(report_path, all_rows)
+    # Composite key: crosscheck rows carry `language`, so a second target
+    # language over overlapping problem_ids never clobbers the prior one.
+    total = _merge_report(report_path, all_rows,
+                          key=lambda r: (r["problem_id"], r["language"]))
     n_checked = len(reports)
     print(f"\n[crosscheck] report written to {report_path} "
           f"({n_checked} checked, {len(unavail_rows)} unavailable, {total} total rows)")
@@ -1092,7 +981,14 @@ def main() -> None:
         "--timeout", type=int, default=DEFAULT_TIMEOUT,
     )
 
-    args = top.parse_args()
+    # Default to the phaseA subcommand when none is given, so bare or flagged
+    # invocations (`python -m eval.gate [--ids ...]`) run Phase A with those
+    # flags rather than erroring on an "invalid choice".
+    _SUBCOMMANDS = {"phaseA", "answers", "crosscheck", "solve", "judge"}
+    argv = sys.argv[1:]
+    if not argv or argv[0] not in _SUBCOMMANDS:
+        argv = ["phaseA", *argv]
+    args = top.parse_args(argv)
 
     # ------------------------------------------------------------------
     # Dispatch
@@ -1113,18 +1009,7 @@ def main() -> None:
         cmd_judge(args)
         return
 
-    # No subcommand or "phaseA" → run Phase A (preserves existing default behaviour)
-    if args.subcommand is None:
-        # Re-parse with Phase-A defaults applied to top-level args
-        # by adding Phase-A args directly to the top-level parser as well
-        # so bare invocation `python -m eval.gate` still works.
-        # We need a second parse with just Phase-A args.
-        pa = argparse.ArgumentParser(
-            description="Phase-A gate: measure GT noise floor for each (problem, realization)."
-        )
-        _add_phase_a_args(pa)
-        args = pa.parse_args()
-
+    # Fall-through: args.subcommand == "phaseA" → run Phase A.
     id_set = set(args.ids) if args.ids else None
     problems, realizations = load_corpus(id_set, language=args.language)
 

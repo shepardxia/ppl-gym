@@ -379,8 +379,10 @@ def _sample_parametric(d: ParamDist, n: int = _PARAM_SAMPLE_N) -> tuple | None:
         raise AlgebraError(f"family {d.family} missing param {e}")
 
 
-# Legacy serializer repr strings: 'Gaussian({ mu: 10, sigma: 1 })' /
-# 'Beta(a=2, b=5)'. Goes away when serializers emit native dist_param.
+# Serializer repr strings for continuous distributions: 'Gaussian({ mu: 10,
+# sigma: 1 })' / 'Beta(a=2, b=5)'. WebPPL emits this form by design (continuous
+# dists can't toJSON); this parser is its canonical reader. Only the Pyro
+# serializer emits native dist_param.
 _LEGACY_REPR_RE = re.compile(r"^(\w+)\s*\(\s*\{?\s*(.*?)\s*\}?\s*\)\s*$")
 
 
@@ -495,9 +497,11 @@ def canonicalize(raw, spec: Spec):
             for n, f in fmap.items():
                 vals = [r.get(n) for r in raw]
                 if f.kind == "value":
-                    # all runs must agree; take consensus
+                    # all runs must agree; take consensus. Compare by equality,
+                    # not set() — a realvec value field is an Exact over a list,
+                    # which is unhashable and would raise TypeError on set().
                     canons = [canonicalize(v, f) for v in vals]
-                    if len(set(canons)) > 1:
+                    if any(c != canons[0] for c in canons[1:]):
                         raise AlgebraError(
                             f"value field {n!r} varies across runs")
                     result_fields.append((n, canons[0]))

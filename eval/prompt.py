@@ -55,7 +55,7 @@ _FENCE_RE = re.compile(
 
 
 def parse_response(text: str) -> tuple[str, list[str]]:
-    """Extract a single WebPPL program from the LLM response.
+    """Extract a single program (the model's code) from the LLM response.
 
     Returns (code, warnings). If no fence is found, returns the raw
     response trimmed and a warning. If multiple fences are found, the last

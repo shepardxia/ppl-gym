@@ -24,8 +24,9 @@ import os
 import re
 import subprocess
 import tempfile
-from dataclasses import dataclass, field
 from pathlib import Path
+
+from eval.exec_common import ExecutionResult, loads_lenient
 
 
 # Header injected before user code. Defines `__serialize(x)`. The trailer
@@ -59,16 +60,6 @@ var __serialize = function(x) {
 """
 
 SERIALIZER_FOOTER = "JSON.stringify(__serialize(ANSWER))"
-
-
-@dataclass
-class ExecutionResult:
-    success: bool
-    answer: object = None
-    raw_stdout: str = ""
-    stderr: str = ""
-    error_message: str = ""
-    code: str = ""
 
 
 # Probmods2's WebPPL install with pre-installed packages.
@@ -156,25 +147,18 @@ def execute_webppl(code: str, timeout: int = 30, random_seed: int | None = None)
                 code=code,
             )
 
-        # WebPPL may interleave warnings on stdout. Our serializer footer
-        # always emits the answer as the last line. Try the whole stdout
-        # first, then the last non-empty line.
+        # WebPPL may interleave warnings on stdout; loads_lenient falls back to
+        # the last non-empty line (the serializer footer always emits it last).
         try:
-            answer = json.loads(stdout)
-        except json.JSONDecodeError:
-            last_line = next(
-                (ln for ln in reversed(stdout.split("\n")) if ln.strip()), ""
+            answer = loads_lenient(stdout)
+        except json.JSONDecodeError as e:
+            return ExecutionResult(
+                success=False,
+                raw_stdout=stdout,
+                stderr=stderr,
+                error_message=f"output not valid JSON: {e}",
+                code=code,
             )
-            try:
-                answer = json.loads(last_line)
-            except json.JSONDecodeError as e:
-                return ExecutionResult(
-                    success=False,
-                    raw_stdout=stdout,
-                    stderr=stderr,
-                    error_message=f"output not valid JSON: {e}",
-                    code=code,
-                )
 
         return ExecutionResult(
             success=True,

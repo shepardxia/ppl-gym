@@ -236,10 +236,7 @@
   }
   window.addEventListener('hashchange', focusFromHash);
 
-  rows.forEach((r) => r.addEventListener('click', () => {
-    location.hash = '#' + r.id; // r.id starts with 'atom-...'? actually it doesn't; use computed
-  }));
-  // The actual hash is the encoded atom id.
+  // The hash is the encoded atom id.
   rows.forEach((r) => r.addEventListener('click', () => {
     const aid = r.dataset.aid;
     const next = '#' + encodeURIComponent(aid);
@@ -302,9 +299,6 @@
     const script = detailEl.querySelector('script[data-source-payload]');
     if (!script) return {};
     try { return JSON.parse(script.textContent); } catch { return {}; }
-  }
-  function bucketDef(bid) {
-    return BUCKETS_BY_ID[bid] || BUCKETS_BY_ID['no-run'];
   }
   function setSource(detailEl, slot, srcKey) {
     const aid = detailEl.dataset.aid;
@@ -489,9 +483,6 @@
     const ta = box.querySelector('[data-fb-text]');
     const submit = box.querySelector('[data-fb-submit]');
     const ack = box.querySelector('[data-fb-ack]');
-    const prev = box.querySelector('[data-fb-prev]');
-    const raterHost = box.querySelector('[data-fb-rater-host]');
-    const raterName = box.querySelector('[data-fb-rater-name]');
     const changeName = box.querySelector('[data-fb-change-name]');
 
     ta.addEventListener('input', () => { submit.disabled = !ta.value.trim(); });
@@ -525,6 +516,8 @@
         }
         const rec = { vote: nextVote, comment: keepComment, rater: getRater(), at: new Date().toISOString() };
         setFb(atomId, rec);
+        // Server write-through (votes, like comments, persist to D1).
+        postFeedback(atomId, rec).catch(() => {});
         showAck(false, rec);
         ta.value = ''; submit.disabled = true;
         return;
@@ -669,7 +662,9 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  // ── WebPPL syntax highlight + code block ──────────────────────────────────
+  // ── Syntax highlight + code block (WebPPL / Python·Pyro / Stan) ────────────
+  // Keyword tables mirror src/lib/render.ts — keep in sync (static file can't
+  // import the TS build).
   const KW = new Set(['var','function','return','if','else','for','while','true','false','null','undefined','new']);
   const BUILTIN = new Set([
     'Infer','Enumerate','MCMC','SMC','rejection','sample','factor','observe','condition',
@@ -677,10 +672,44 @@
     'discrete','mem','mapData','map','map2','reduce','Categorical','Bernoulli','Binomial',
     'Gaussian','Beta','Dirichlet','Vector','Math','repeat',
   ]);
-  function tokenize(src) {
+  const PYTHON_KW = new Set([
+    'def','return','if','elif','else','for','while','import','from','as','with','lambda','None',
+    'True','False','and','or','not','in','is','class','try','except','finally','raise','yield',
+    'pass','break','continue','global','nonlocal','assert','del','await','async',
+  ]);
+  const PYTHON_LIB = new Set([
+    'pyro','dist','torch','sample','param','plate','infer','SVI','MCMC','NUTS','HMC','Predictive',
+    'Trace_ELBO','Adam','tensor','print','range','len','enumerate','zip','sum','Bernoulli','Normal',
+    'Categorical','Dirichlet','Beta','Gamma','Poisson','Binomial','Uniform','Exponential','Delta','Empirical',
+  ]);
+  const STAN_KW = new Set([
+    'data','parameters','model','transformed','generated','quantities','functions','int','real',
+    'vector','matrix','row_vector','array','simplex','ordered','positive_ordered','cov_matrix',
+    'corr_matrix','cholesky_factor_cov','cholesky_factor_corr','unit_vector','for','if','else',
+    'while','return','target','print','lower','upper',
+  ]);
+  const STAN_LIB = new Set([
+    'normal','cauchy','student_t','lognormal','exponential','gamma','inv_gamma','beta','bernoulli',
+    'bernoulli_logit','binomial','poisson','categorical','categorical_logit','dirichlet','multi_normal',
+    'uniform','exp','log','sqrt','pow','fabs','sum','mean','to_vector','rep_vector','log_sum_exp',
+    'inv_logit','softmax',
+  ]);
+  function langSpec(lang) {
+    if (lang === 'python' || lang === 'pyro') return { kw: PYTHON_KW, lib: PYTHON_LIB, hash: true };
+    if (lang === 'stan') return { kw: STAN_KW, lib: STAN_LIB, hash: false };
+    return { kw: KW, lib: BUILTIN, hash: false };
+  }
+  function tokenize(src, lang) {
+    const spec = langSpec(lang);
     const toks = []; let i = 0;
     while (i < src.length) {
       const c = src[i];
+      if (spec.hash && c === '#') {
+        const j = src.indexOf('\n', i);
+        const end = j === -1 ? src.length : j;
+        toks.push({ t: 'cm', v: src.slice(i, end) });
+        i = end; continue;
+      }
       if (c === '/' && src[i+1] === '/') {
         const j = src.indexOf('\n', i);
         const end = j === -1 ? src.length : j;
@@ -708,8 +737,8 @@
         let j = i; while (j < src.length && /[A-Za-z0-9_$]/.test(src[j])) j++;
         const v = src.slice(i, j);
         let t = 'i';
-        if (KW.has(v)) t = 'k';
-        else if (BUILTIN.has(v)) t = 'b';
+        if (spec.kw.has(v)) t = 'k';
+        else if (spec.lib.has(v)) t = 'b';
         else if (src[j] === '(') t = 'f';
         toks.push({ t, v }); i = j; continue;
       }
@@ -722,8 +751,8 @@
     }
     return toks;
   }
-  function highlightLines(src) {
-    const tokens = tokenize(src);
+  function highlightLines(src, lang) {
+    const tokens = tokenize(src, lang);
     const lines = [[]];
     for (const tok of tokens) {
       const segs = tok.v.split('\n');
@@ -735,7 +764,7 @@
     return lines;
   }
   function renderCodeBlock(code, lang) {
-    const lines = highlightLines(code || '');
+    const lines = highlightLines(code || '', lang);
     const body = lines.map((toks, i) => {
       const content = toks.length === 0
         ? '​'
@@ -749,13 +778,14 @@
   // ── Chart (mirrored vertical bars) ────────────────────────────────────────
   function seriesProbs(s, support) {
     if (!s) return support.map(() => 0);
+    const idxOf = new Map(s.support.map((lab, k) => [lab, k]));
+    const total = s.kind === 'samples'
+      ? ((s.counts || []).reduce((a, b) => a + b, 0) || 1)
+      : 0;
     return support.map((label) => {
-      const idx = s.support.indexOf(label);
+      const idx = idxOf.has(label) ? idxOf.get(label) : -1;
       if (idx === -1) return 0;
-      if (s.kind === 'samples') {
-        const total = (s.counts || []).reduce((a, b) => a + b, 0) || 1;
-        return ((s.counts || [])[idx] || 0) / total;
-      }
+      if (s.kind === 'samples') return ((s.counts || [])[idx] || 0) / total;
       return (s.probs || [])[idx] || 0;
     });
   }
@@ -823,7 +853,7 @@
     }
     const mid = `<line x1="${padL}" y1="${midY}" x2="${w - padR}" y2="${midY}" class="chart-axis"/>`;
     const body = isContinuous
-      ? renderNumericBars({ support, aProbs, bProbs, maxP, padL, padR, innerW, midY, halfH, h, w })
+      ? renderNumericBars({ support, aProbs, bProbs, maxP, padL, innerW, midY, halfH, h })
       : renderCategoricalBars({ support, aProbs, bProbs, maxP, padL, innerW, midY, halfH, h });
     const metaBits = [`${support.length} bin${support.length === 1 ? '' : 's'}`];
     if (numeric && support.length > 1) {
@@ -842,7 +872,7 @@
       `</svg>` +
     `</div>`;
   }
-  function renderNumericBars({ support, aProbs, bProbs, maxP, padL, padR, innerW, midY, halfH, h, w }) {
+  function renderNumericBars({ support, aProbs, bProbs, maxP, padL, innerW, midY, halfH, h }) {
     const xs = support.map(Number);
     const xMin = Math.min(...xs);
     const xMax = Math.max(...xs);

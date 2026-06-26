@@ -1,9 +1,9 @@
 ---
 import type { Atom, Bucket, ScoredRun, RunMeta, RenderOutput } from '@/lib/types';
-import { bucketFor, fmtTV, fmtKL, glyphFor, toneFor, descFor, maxTV, maxKL, BUCKET_BY_ID } from '@/lib/buckets';
+import { bucketFor, fmtTV, fmtKL, glyphFor, toneFor, maxTV, maxKL, BUCKET_BY_ID } from '@/lib/buckets';
 import {
   renderMarkdown, renderCode, renderChart, renderValueOutput,
-  normalizeOutput, shapeLabel, atomDomId, isDistLike, prepareAtomOutputs,
+  normalizeOutput, shapeLabel, atomDomId, isDistLike, prepareAtomOutputs, escapeHtml,
 } from '@/lib/render';
 import { atomLeaf, atomPrefix } from '@/lib/atoms';
 
@@ -75,9 +75,6 @@ const B = sourcesById[defaultB];
 
 const primaryRec = primary ? perAtomRuns[primary.id] : undefined;
 const primaryBucket = bucketFor(primaryRec);
-const primaryTone = toneFor(primaryBucket);
-const primaryDesc = descFor(primaryBucket);
-const primaryGlyph = glyphFor(primaryBucket);
 
 const totalRuns = runs.filter((r) => perAtomRuns[r.id]).length;
 
@@ -88,7 +85,7 @@ function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
     body = (
       `<div class="compare-error">` +
       `<div class="compare-error-hd">execution error</div>` +
-      `<pre class="compare-error-msg">${escape(src.error)}</pre>` +
+      `<pre class="compare-error-msg">${escapeHtml(src.error)}</pre>` +
       (src.code ? renderCode(src.code, 'webppl') : '') +
       `</div>`
     );
@@ -103,8 +100,8 @@ function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
   return (
     `<div class="compare-col">` +
       `<div class="compare-col-hd">` +
-        `<span class="compare-col-tag ${tagClass}">${escape(src.short)}</span>` +
-        `<span class="compare-col-label">${escape(src.label)}</span>` +
+        `<span class="compare-col-tag ${tagClass}">${escapeHtml(src.short)}</span>` +
+        `<span class="compare-col-label">${escapeHtml(src.label)}</span>` +
         bucketBadge +
       `</div>` +
       body +
@@ -125,9 +122,6 @@ function renderBucketBadge(b: Bucket, tv: number | null, size: 'xs' | 'sm' = 'sm
   );
 }
 
-function escape(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 // Pre-render the default compare body (code panes + chart).
 const compareGridHtml = compareColHtml(A, 'a') + compareColHtml(B, 'b');
@@ -142,7 +136,7 @@ if (distLike) {
       `<div class="section-title">` +
         `<span class="section-title-num">02</span>` +
         `<span>output overlay</span>` +
-        `<span class="section-title-meta">${escape(shapeStr)}</span>` +
+        `<span class="section-title-meta">${escapeHtml(shapeStr)}</span>` +
       `</div>` +
       renderChart({ a: aSeries, b: bSeries, labelA: A.short, labelB: B.short }) +
     `</div>`
@@ -153,11 +147,11 @@ if (distLike) {
       `<div class="section-title">` +
         `<span class="section-title-num">02</span>` +
         `<span>output</span>` +
-        `<span class="section-title-meta">${escape(shapeStr)}</span>` +
+        `<span class="section-title-meta">${escapeHtml(shapeStr)}</span>` +
       `</div>` +
       `<div class="compare-grid">` +
-        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-a">${escape(A.short)}</span></div>${renderValueOutput(A.output)}</div>` +
-        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-b">${escape(B.short)}</span></div>${renderValueOutput(B.output, A.output ? '(run produced no output)' : '')}</div>` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-a">${escapeHtml(A.short)}</span></div>${renderValueOutput(A.output)}</div>` +
+        `<div class="compare-col"><div class="compare-col-hd"><span class="compare-col-tag tag-b">${escapeHtml(B.short)}</span></div>${renderValueOutput(B.output, A.output ? '(run produced no output)' : '')}</div>` +
       `</div>` +
     `</div>`
   );

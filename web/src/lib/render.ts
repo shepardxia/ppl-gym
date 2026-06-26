@@ -45,6 +45,10 @@ function parseMarkdown(src: string): MdBlock[] {
     if (line.trim() === '') { flushPara(); continue; }
     buf.push(line);
   }
+  if (inFence && fenceBuf.length) {
+    // Unterminated fence: render to EOF rather than silently dropping it.
+    parts.push({ type: 'code', lang: fenceLang, content: fenceBuf.join('\n') });
+  }
   flushPara();
   return parts;
 }
@@ -70,8 +74,11 @@ function inlineMd(text: string): string {
         continue;
       }
     }
-    const next = escaped.indexOf('`', i);
-    const nextB = escaped.indexOf('**', i);
+    // Scan from i+1: a delimiter AT i here is an unmatched opener (the branches
+    // above only fall through when there is no closing partner). Searching from
+    // i+1 emits it literally and guarantees forward progress (no infinite loop).
+    const next = escaped.indexOf('`', i + 1);
+    const nextB = escaped.indexOf('**', i + 1);
     let end = escaped.length;
     if (next > -1) end = Math.min(end, next);
     if (nextB > -1) end = Math.min(end, nextB);
@@ -90,7 +97,9 @@ export function renderMarkdown(src: string): string {
   ).join('') + '</div>';
 }
 
-// ─── WebPPL syntax highlighter ──────────────────────────────────────────────
+// ─── Syntax highlighter (WebPPL / Python·Pyro / Stan) ────────────────────────
+// Keyword tables are mirrored in public/browse.js (LANG_KW/LANG_LIB) — keep in
+// sync; a static public/ file cannot import this TS build.
 
 const WEBPPL_KW = new Set([
   'var','function','return','if','else','for','while','true','false','null','undefined','new',
@@ -101,14 +110,50 @@ const WEBPPL_INFER = new Set([
   'discrete','mem','mapData','map','map2','reduce','Categorical','Bernoulli','Binomial',
   'Gaussian','Beta','Dirichlet','Vector','Math','repeat',
 ]);
+const PYTHON_KW = new Set([
+  'def','return','if','elif','else','for','while','import','from','as','with','lambda','None',
+  'True','False','and','or','not','in','is','class','try','except','finally','raise','yield',
+  'pass','break','continue','global','nonlocal','assert','del','await','async','while',
+]);
+const PYTHON_LIB = new Set([
+  'pyro','dist','torch','sample','param','plate','infer','SVI','MCMC','NUTS','HMC','Predictive',
+  'Trace_ELBO','Adam','tensor','print','range','len','enumerate','zip','sum','Bernoulli','Normal',
+  'Categorical','Dirichlet','Beta','Gamma','Poisson','Binomial','Uniform','Exponential','Delta','Empirical',
+]);
+const STAN_KW = new Set([
+  'data','parameters','model','transformed','generated','quantities','functions','int','real',
+  'vector','matrix','row_vector','array','simplex','ordered','positive_ordered','cov_matrix',
+  'corr_matrix','cholesky_factor_cov','cholesky_factor_corr','unit_vector','for','if','else',
+  'while','return','target','print','lower','upper',
+]);
+const STAN_LIB = new Set([
+  'normal','cauchy','student_t','lognormal','exponential','gamma','inv_gamma','beta','bernoulli',
+  'bernoulli_logit','binomial','poisson','categorical','categorical_logit','dirichlet','multi_normal',
+  'uniform','exp','log','sqrt','pow','fabs','sum','mean','to_vector','rep_vector','log_sum_exp',
+  'inv_logit','softmax',
+]);
+
+function langSpec(lang: string): { kw: Set<string>; lib: Set<string>; hash: boolean } {
+  if (lang === 'python' || lang === 'pyro') return { kw: PYTHON_KW, lib: PYTHON_LIB, hash: true };
+  if (lang === 'stan') return { kw: STAN_KW, lib: STAN_LIB, hash: false };
+  return { kw: WEBPPL_KW, lib: WEBPPL_INFER, hash: false };
+}
 
 interface Tok { t: string; v: string; }
 
-function tokenize(src: string): Tok[] {
+function tokenize(src: string, lang = 'webppl'): Tok[] {
+  const spec = langSpec(lang);
   const tokens: Tok[] = [];
   let i = 0;
   while (i < src.length) {
     const c = src[i];
+    if (spec.hash && c === '#') {
+      const j = src.indexOf('\n', i);
+      const end = j === -1 ? src.length : j;
+      tokens.push({ t: 'cm', v: src.slice(i, end) });
+      i = end;
+      continue;
+    }
     if (c === '/' && src[i + 1] === '/') {
       const j = src.indexOf('\n', i);
       const end = j === -1 ? src.length : j;
@@ -146,8 +191,8 @@ function tokenize(src: string): Tok[] {
       while (j < src.length && /[A-Za-z0-9_$]/.test(src[j])) j++;
       const v = src.slice(i, j);
       let t = 'i';
-      if (WEBPPL_KW.has(v)) t = 'k';
-      else if (WEBPPL_INFER.has(v)) t = 'b';
+      if (spec.kw.has(v)) t = 'k';
+      else if (spec.lib.has(v)) t = 'b';
       else if (src[j] === '(') t = 'f';
       tokens.push({ t, v });
       i = j;
@@ -171,8 +216,8 @@ function tokenize(src: string): Tok[] {
   return tokens;
 }
 
-function highlightLines(src: string): Tok[][] {
-  const tokens = tokenize(src);
+function highlightLines(src: string, lang = 'webppl'): Tok[][] {
+  const tokens = tokenize(src, lang);
   const lines: Tok[][] = [[]];
   for (const tok of tokens) {
     const segs = tok.v.split('\n');
@@ -185,7 +230,7 @@ function highlightLines(src: string): Tok[][] {
 }
 
 export function renderCode(code: string, lang = 'webppl'): string {
-  const lines = highlightLines(code || '');
+  const lines = highlightLines(code || '', lang);
   const body = lines.map((toks, i) => {
     const content = toks.length === 0
       ? '​'
@@ -264,13 +309,14 @@ interface ChartSeries { kind: 'distribution' | 'samples'; support: string[]; pro
 
 function seriesProbs(s: ChartSeries | null | undefined, support: string[]): number[] {
   if (!s) return support.map(() => 0);
+  const idxOf = new Map(s.support.map((lab, k) => [lab, k] as const));
+  const total = s.kind === 'samples'
+    ? ((s.counts ?? []).reduce((a, b) => a + b, 0) || 1)
+    : 0;
   return support.map((label) => {
-    const idx = s.support.indexOf(label);
+    const idx = idxOf.get(label) ?? -1;
     if (idx === -1) return 0;
-    if (s.kind === 'samples') {
-      const total = (s.counts ?? []).reduce((a, b) => a + b, 0) || 1;
-      return ((s.counts ?? [])[idx] ?? 0) / total;
-    }
+    if (s.kind === 'samples') return ((s.counts ?? [])[idx] ?? 0) / total;
     return (s.probs ?? [])[idx] ?? 0;
   });
 }

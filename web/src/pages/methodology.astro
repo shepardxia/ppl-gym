@@ -11,11 +11,11 @@ export const prerender = true;
   </p>
 
   <Flow steps={[
-    { t: 'textbook sources', s: 'probmods · dippl · forest' },
+    { t: 'sources', s: 'probmods · dippl · forest · posteriordb' },
     { t: 'problem statement', s: 'given / model / query<br/>+ typed answer spec' },
-    { t: 'realizations', s: 'WebPPL · Pyro' },
+    { t: 'realizations', s: 'WebPPL · Pyro · Stan' },
     { t: 'two gates', s: 'solver re-derivation<br/>cross-language' },
-    { t: 'verified dataset', s: '115 problems', tone: 'good' },
+    { t: 'verified dataset', s: '160 problems', tone: 'good' },
   ]} label="Statements are language-neutral prose that pin the answer and leave the program open. A ground truth ships after surviving both gates." />
 
   <h2>Measured tolerance</h2>
@@ -35,10 +35,10 @@ export const prerender = true;
 
   <h2>Gate 2 — cross-language consistency</h2>
   <Flow steps={[
-    { t: 'WebPPL GT', s: 'k seeded runs' },
-    { t: 'agree within margin × max(floors)', s: '+ mechanical audit: model must use the language’s own machinery' },
-    { t: 'Pyro GT', s: 'k seeded runs' },
-  ]} label="Stronger than solver consensus, which shares the GT's blind spots — this gate caught a biased, already-accepted WebPPL ground truth." />
+    { t: 'WebPPL / gold-reference GT', s: 'k seeded runs' },
+    { t: 'agree within margin × max(floors)', s: 'idiomatic library use, audited by judgment' },
+    { t: 'Pyro / Stan GT', s: 'k seeded runs' },
+  ]} label="Stronger than solver consensus, which shares the GT's blind spots — this gate caught a biased, already-accepted WebPPL ground truth. The posteriordb corpus crosschecks its Stan column against gold reference draws." />
 
   <h2>Provenance</h2>
   <p>

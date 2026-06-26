@@ -31,10 +31,10 @@ import json
 import os
 import re
 import subprocess
-import sys
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
+
+from eval.exec_common import ExecutionResult, loads_lenient
 
 
 # Path to the project venv's python (so subprocess sees pyro/torch).
@@ -234,16 +234,6 @@ def __emit_answer():
 SERIALIZER_FOOTER = "__emit_answer()\n"
 
 
-@dataclass
-class ExecutionResult:
-    success: bool
-    answer: object = None
-    raw_stdout: str = ""
-    stderr: str = ""
-    error_message: str = ""
-    code: str = ""
-
-
 def _wrap_program(code: str) -> str:
     """Prepend serializer header, append answer-emit footer."""
     return SERIALIZER_HEADER + "\n" + code.rstrip() + "\n" + SERIALIZER_FOOTER
@@ -301,19 +291,15 @@ def execute_pyro(code: str, timeout: int = 30, random_seed: int | None = None) -
             )
 
         try:
-            answer = json.loads(stdout)
-        except json.JSONDecodeError:
-            last_line = next((ln for ln in reversed(stdout.split("\n")) if ln.strip()), "")
-            try:
-                answer = json.loads(last_line)
-            except json.JSONDecodeError as e:
-                return ExecutionResult(
-                    success=False,
-                    raw_stdout=stdout,
-                    stderr=stderr,
-                    error_message=f"output not valid JSON: {e}",
-                    code=code,
-                )
+            answer = loads_lenient(stdout)
+        except json.JSONDecodeError as e:
+            return ExecutionResult(
+                success=False,
+                raw_stdout=stdout,
+                stderr=stderr,
+                error_message=f"output not valid JSON: {e}",
+                code=code,
+            )
 
         return ExecutionResult(
             success=True,
@@ -386,13 +372,9 @@ def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1) ->
             return [None] * len(seeds)
         stdout = proc.stdout.strip()
         try:
-            raw = json.loads(stdout)
+            raw = loads_lenient(stdout)
         except json.JSONDecodeError:
-            last = next((ln for ln in reversed(stdout.split("\n")) if ln.strip()), "")
-            try:
-                raw = json.loads(last)
-            except json.JSONDecodeError:
-                return [None] * len(seeds)
+            return [None] * len(seeds)
         if not isinstance(raw, list) or len(raw) != len(seeds):
             return [None] * len(seeds)
         return [

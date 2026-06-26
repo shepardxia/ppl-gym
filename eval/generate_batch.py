@@ -29,7 +29,6 @@ from pathlib import Path
 
 from anthropic import Anthropic
 
-from eval.io import load_jsonl, write_jsonl
 from eval.prompt import parse_response, system_prompt
 from eval.render import render_problem
 
@@ -196,7 +195,6 @@ def _write_generation_rows(
     model: str,
     language: str,
     n_solvers: int,
-    batch_id: str,
 ) -> None:
     """Write generation rows to output_path (JSONL, no summary trailer)."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -300,8 +298,7 @@ def main() -> None:
         results = collect_results(client, batch_id)
         _write_generation_rows(
             problems, results, output_path,
-            model=args.model, language=args.language,
-            n_solvers=n_solvers, batch_id=batch_id,
+            model=args.model, language=args.language, n_solvers=n_solvers,
         )
         print(f"[generate_batch] wrote {len(problems) * n_solvers} rows to {output_path}")
         return
@@ -330,8 +327,7 @@ def main() -> None:
     results = collect_results(client, batch_id)
     _write_generation_rows(
         problems, results, output_path,
-        model=args.model, language=args.language,
-        n_solvers=n_solvers, batch_id=batch_id,
+        model=args.model, language=args.language, n_solvers=n_solvers,
     )
     print(f"[generate_batch] wrote {len(problems) * n_solvers} rows to {output_path}")
 

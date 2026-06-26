@@ -222,10 +222,17 @@ def reference_realization(name: str) -> dict:
     return {"problem_id": problem_id(name), "language": "reference", "code": name}
 
 
-def problem_record(name: str, statement: dict | None = None) -> dict:
+@lru_cache(maxsize=None)
+def model_info(name: str) -> dict:
+    """Model-level info JSON ({title, description, references, ...}) or {}."""
     info = posterior_info(name)
-    minfo_path = _pdb_root() / "models" / "info" / f"{info['model_name']}.info.json"
-    minfo = json.loads(minfo_path.read_text()) if minfo_path.exists() else {}
+    path = _pdb_root() / "models" / "info" / f"{info['model_name']}.info.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def problem_record(name: str, statement: dict | None = None,
+                   status: dict | None = None) -> dict:
+    minfo = model_info(name)
     return {
         "problem_id": problem_id(name),
         "provenance": {
@@ -240,7 +247,7 @@ def problem_record(name: str, statement: dict | None = None) -> dict:
             "query": "",
         },
         "answer_spec": answer_spec(name),
-        "status": {"review": "draft", "notes": "ingested from posteriordb"},
+        "status": status or {"review": "draft", "notes": "ingested from posteriordb"},
     }
 
 
@@ -248,29 +255,44 @@ def problem_record(name: str, statement: dict | None = None) -> dict:
 # Build CLI: emit problem/realization rows (merge by problem_id, never clobber)
 # ---------------------------------------------------------------------------
 
+# Posteriors whose default sampling is too short to reproduce the gold posterior
+# (weakly-identified / multimodal). Built with a heavier reference-mirrored
+# regime (chains=8, longer warmup, gold adapt_delta). cmd_build applies these so
+# `posteriordb build` reproduces the stored bundles exactly; without it a rebuild
+# would regress them to DEFAULT_SAMPLING and silently fail their crosscheck.
+_SAMPLING_OVERRIDES: dict[str, dict] = {
+    "posteriordb-bball_drive_event_0/hmm_drive_0":
+        {"chains": 8, "iter_warmup": 6000, "iter_sampling": 3000, "adapt_delta": 0.9},
+    "posteriordb-low_dim_gauss_mix/low_dim_gauss_mix":
+        {"chains": 8, "iter_warmup": 6000, "iter_sampling": 3000, "adapt_delta": 0.8},
+}
+
+
 def cmd_build(args) -> None:
     all_names = gold_posterior_names()
     # accept either posteriordb posterior names or problem_ids
     by_pid = {problem_id(n): n for n in all_names}
     resolved = [by_pid.get(n, n) for n in (args.ids or all_names)]
 
-    # preserve existing authored statements when rebuilding
+    # preserve existing authored statements + curated status when rebuilding
     existing_stmt: dict[str, dict] = {}
+    existing_status: dict[str, dict] = {}
     if PROBLEMS_OUT.exists():
         for r in load_jsonl(PROBLEMS_OUT):
             existing_stmt[r["problem_id"]] = r.get("statement", {})
+            if r.get("status"):
+                existing_status[r["problem_id"]] = r["status"]
 
     problems, stans, refs = [], [], []
     skipped: list[tuple[str, str]] = []
     for name in resolved:
         pid = problem_id(name)
         try:
-            stan = stan_realization(name)
+            stan = stan_realization(name, _SAMPLING_OVERRIDES.get(pid))
             ref = reference_realization(name)
             stmt = existing_stmt.get(pid)
-            prob = (problem_record(name, stmt)
-                    if stmt and any(stmt.get(k) for k in ("given", "model", "query"))
-                    else problem_record(name))
+            stmt = stmt if stmt and any(stmt.get(k) for k in ("given", "model", "query")) else None
+            prob = problem_record(name, stmt, status=existing_status.get(pid))
         except Exception as exc:  # one bad posterior must not sink the batch
             skipped.append((name, f"{type(exc).__name__}: {exc}"))
             continue
@@ -293,9 +315,7 @@ def authoring_material(name: str) -> dict:
     """Everything a statement author (human or agent) needs for one posterior:
     the reference Stan model (ground truth for what the model IS), a compact data
     summary, the queried parameters, and the title/description/references."""
-    info = posterior_info(name)
-    minfo_p = _pdb_root() / "models" / "info" / f"{info['model_name']}.info.json"
-    minfo = json.loads(minfo_p.read_text()) if minfo_p.exists() else {}
+    minfo = model_info(name)
     model = model_code(name)
     declared = set(data_block_vars(model))
     summary = {}
@@ -347,6 +367,11 @@ def retire(pid: str, reason: str, *, evidence: dict | None = None) -> None:
     write_jsonl(EXCLUDED_OUT, sorted(led, key=lambda r: r["problem_id"]))
 
 
+def cmd_retire(args) -> None:
+    retire(args.pid, args.reason)
+    print(f"[posteriordb retire] {args.pid}: {args.reason}")
+
+
 def cmd_list(args) -> None:
     for name in gold_posterior_names():
         print(f"{problem_id(name):<55s} params={len(param_names(name))}")
@@ -365,6 +390,10 @@ def main() -> None:
     mt.add_argument("--ids", nargs="*", help="posterior names or problem_ids (default: all gold)")
     mt.add_argument("--out", default="data/.rework/posteriordb_material.json")
     mt.set_defaults(func=cmd_material)
+    rt = sub.add_parser("retire", help="drop a problem from the live corpus, with an audit record")
+    rt.add_argument("pid", help="problem_id to retire")
+    rt.add_argument("--reason", required=True, help="why it is excluded")
+    rt.set_defaults(func=cmd_retire)
     args = ap.parse_args()
     args.func(args)
 
