@@ -77,12 +77,17 @@ def build_requests(
     n_solvers: int = _DEFAULT_N_SOLVERS,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     temperature: float = DEFAULT_TEMPERATURE,
+    with_primer: bool = True,
+    verbose_primer: bool = False,
 ) -> list[dict]:
     """Build Anthropic batch request dicts (n_solvers per problem).
 
-    Returns a list of request dicts ready for submit_batch.
+    Returns a list of request dicts ready for submit_batch. The primer is a knob:
+    `with_primer=False` is the no-primer arm; `verbose_primer=True` swaps the lean
+    primer for the heavier hand-holding variant.
     """
-    sys_text = system_prompt(with_primer=True, language=language)
+    sys_text = system_prompt(with_primer=with_primer, language=language,
+                             verbose=verbose_primer)
     system_blocks = [{
         "type": "text",
         "text": sys_text,

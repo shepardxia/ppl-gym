@@ -151,6 +151,7 @@ def collect_and_score(client, combo: Combo, out_dir: Path, *, n_solvers, seed,
 
 
 def run_benchmark(models, languages, *, out_dir, ids=None, limit=None, n_solvers=3,
+                  with_primer=True, verbose_primer=False,
                   seed=DEFAULT_SEED, n_draws=DEFAULT_N_MC, timeout=DEFAULT_TIMEOUT,
                   score_workers=4, poll_interval=30, poll_timeout=3600) -> list[dict]:
     """Submit + score a (model x language) grid. Resumable: a combo already
@@ -184,7 +185,8 @@ def run_benchmark(models, languages, *, out_dir, ids=None, limit=None, n_solvers
             batch_id = manifest.get(slug, "")
             if not gens_exist and not batch_id:
                 requests = build_requests(problems, language=language, model=rid,
-                                          n_solvers=n_solvers)
+                                          n_solvers=n_solvers, with_primer=with_primer,
+                                          verbose_primer=verbose_primer)
                 batch_id = submit_batch(client, requests)
                 manifest[slug] = batch_id
                 _save_manifest(out_dir, manifest)
@@ -317,6 +319,9 @@ def main() -> None:
     rp.add_argument("--limit", type=int, default=None,
                     help="Pilot: first N scorable problems per language.")
     rp.add_argument("--n-samples", type=int, default=3, help="Solver attempts per problem.")
+    rp.add_argument("--no-primer", action="store_true", help="No-primer arm (system prompt only).")
+    rp.add_argument("--verbose-primer", action="store_true",
+                    help="Use the heavier hand-holding primer instead of the lean one.")
     rp.add_argument("--seed", type=int, default=DEFAULT_SEED)
     rp.add_argument("--n-draws", type=int, default=DEFAULT_N_MC)
     rp.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
@@ -338,6 +343,7 @@ def main() -> None:
             [m.strip() for m in args.models.split(",") if m.strip()],
             [l.strip() for l in args.languages.split(",") if l.strip()],
             out_dir=args.out, ids=args.ids, limit=args.limit, n_solvers=args.n_samples,
+            with_primer=not args.no_primer, verbose_primer=args.verbose_primer,
             seed=args.seed, n_draws=args.n_draws, timeout=args.timeout,
             score_workers=args.workers, poll_interval=args.poll_interval,
             poll_timeout=args.poll_timeout,

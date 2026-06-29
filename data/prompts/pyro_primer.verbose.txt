@@ -1,0 +1,26 @@
+`pyro`, `pyro.distributions as dist`, `pyro.infer`, and `torch` are already imported and ready to use.
+
+Random sampling: every random choice is `pyro.sample("name", dist.<Name>(args))`, and each sample site needs a unique string name (index the name inside loops, e.g. `f"x{i}"`).
+
+Common distributions (in `dist`): `Bernoulli(p)` (values 0.0/1.0), `Categorical(probs=tensor)` (values 0..K-1), `Normal(loc, scale)`, `Beta(a, b)`, `Gamma(concentration, rate)`, `Dirichlet(concentration_tensor)`, `Binomial(total_count, probs)`, `Poisson(rate)`, `Uniform(low, high)`.
+
+Conditioning:
+  - observe a value: `pyro.sample("obs", dist.Normal(mu, 1.0), obs=torch.tensor(2.5))`;
+  - condition on an event: observe its indicator, `pyro.sample("e", dist.Bernoulli(flag.float()), obs=torch.tensor(1.0))`, or add a log-weight with `pyro.factor("name", log_weight)`.
+
+Inference patterns:
+  - posterior over discrete latents: `post = pyro.infer.Importance(model, num_samples=...).run()` then `pyro.infer.EmpiricalMarginal(post)`, or aggregate the weighted traces into a dict from outcome to probability; for an exact discrete posterior, enumerate the latents (`config_enumerate` + `TraceEnum_ELBO().compute_marginals`) rather than sampling them;
+  - MCMC: `pyro.infer.MCMC(pyro.infer.NUTS(model), num_samples=..., warmup_steps=...)`, then `mcmc.get_samples()["site"]` for the posterior samples (use `pyro.infer.HMC(step_size=..., num_steps=...)` when specific HMC parameters are required);
+  - when the posterior has a closed form, constructing the resulting distribution directly is fine.
+
+NUTS/HMC sample ONLY continuous latents — they do not return discrete `pyro.sample` sites, so `mcmc.get_samples()["discrete_site"]` raises KeyError. Compute any posterior-predictive count or discrete quantity OUTSIDE the kernel from the returned continuous samples (e.g. for each posterior draw of `p`, draw `dist.Binomial(n, p)`).
+
+Binding the answer (the task's Answer format section says which form is expected):
+  - a dict from each outcome to its probability: `{True: 0.6, False: 0.4}`, `{"chases": 0.7, "sleeps": 0.3}` (tuple keys are allowed for sequence-valued outcomes; an object-valued outcome — a dict of fields — is NOT hashable, so key it by `json.dumps(outcome, sort_keys=True)` or return a list of sampled outcome objects instead);
+  - a pyro/torch `Distribution` (including an `EmpiricalMarginal`);
+  - a list or 1-D tensor of posterior samples;
+  - a plain number, bool, string, or list for a value answer;
+  - for a record answer, a dict with exactly the named fields.
+When the task lists the exact outcome labels, use those exact values as keys (a boolean label is the Python bool; a string label is that string).
+
+Reusing a sample-site name raises an error.

@@ -20,11 +20,24 @@ PYRO_SYSTEM_BASE = (_PROMPTS_DIR / "pyro_system_base.txt").read_text().rstrip("\
 STAN_SYSTEM_BASE = (_PROMPTS_DIR / "stan_system_base.txt").read_text().rstrip("\n")
 WEBPPL_PRIMER = (_PROMPTS_DIR / "webppl_primer.txt").read_text().rstrip("\n")
 PYRO_PRIMER = (_PROMPTS_DIR / "pyro_primer.txt").read_text().rstrip("\n")
-STAN_PRIMER = (_PROMPTS_DIR / "stan_primer.txt").read_text().rstrip("\n")
 
 _SYSTEM_BASE = {"webppl": WEBPPL_SYSTEM_BASE, "pyro": PYRO_SYSTEM_BASE, "stan": STAN_SYSTEM_BASE}
-# Primers level the playing field for PPLs models rarely saw in pretraining.
-_PRIMER = {"webppl": WEBPPL_PRIMER, "pyro": PYRO_PRIMER, "stan": STAN_PRIMER}
+
+# Primer = a knob (we also run no-primer). Two variants:
+#   lean    — light API orientation for the rarer-in-pretraining PPLs (Stan is
+#             standard, so it has none); the measurement baseline.
+#   verbose — heavier hand-holding (idioms, gotchas) for weaker models.
+def _load_primers(suffix: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for lang in ("webppl", "pyro", "stan"):
+        p = _PROMPTS_DIR / f"{lang}_primer{suffix}.txt"
+        if p.exists():
+            out[lang] = p.read_text().rstrip("\n")
+    return out
+
+
+_PRIMER = {"webppl": WEBPPL_PRIMER, "pyro": PYRO_PRIMER}
+_PRIMER_VERBOSE = _load_primers(".verbose")
 
 
 def _base_for(language: str) -> str:
@@ -33,13 +46,12 @@ def _base_for(language: str) -> str:
     return _SYSTEM_BASE[language]
 
 
-def _primer_for(language: str) -> str:
-    return _PRIMER.get(language, "")
-
-
-def system_prompt(*, with_primer: bool = True, language: str = "webppl") -> str:
+def system_prompt(*, with_primer: bool = True, language: str = "webppl",
+                  verbose: bool = False) -> str:
     base = _base_for(language)
-    primer = _primer_for(language) if with_primer else ""
+    if not with_primer:
+        return base
+    primer = (_PRIMER_VERBOSE if verbose else _PRIMER).get(language, "")
     return f"{base}\n\n{primer}" if primer else base
 
 

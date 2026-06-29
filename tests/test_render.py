@@ -38,9 +38,9 @@ def test_sections_and_statement_passthrough():
 # ---------------------------------------------------------------------------
 
 def test_value_contract():
-    """value: binds var ANSWER, no distribution/sampling language."""
+    """value: contract names ANSWER as the computed value, no dist/sampling language."""
     text = render_problem(_make_problem({"kind": "value", "domain": "real"}))
-    assert "var ANSWER" in text
+    assert "ANSWER" in text and "computed value" in text
     assert "Infer" not in text and "draw" not in text.lower()
 
 
@@ -62,7 +62,7 @@ def test_dist_draws_contract():
     text = render_problem(_make_problem({"kind": "dist", "domain": "finite", "protocol": "draws"}))
     assert "ANSWER" in text and "Infer" not in text
     assert "one" in text.lower() or "single" in text.lower()
-    assert "many times" in text.lower() or "runs" in text.lower()
+    assert "repeatedly" in text.lower() or "each run" in text.lower()
 
 
 def test_record_recursion():
@@ -131,10 +131,10 @@ def test_no_wire_format_leak(language):
 # ---------------------------------------------------------------------------
 
 def test_pyro_contract():
-    """pyro: `ANSWER = <expression>` (never `var ANSWER`), dict/distribution language,
+    """pyro: names ANSWER (never `var ANSWER`), dict/distribution language,
     no WebPPL Infer; record uses dict wording + field names."""
     val = render_problem(_make_problem({"kind": "value", "domain": "real"}), language="pyro")
-    assert "ANSWER = <expression>" in val and "var ANSWER" not in val
+    assert "ANSWER" in val and "var ANSWER" not in val
     dist = render_problem(_make_problem({"kind": "dist", "domain": "bool"}), language="pyro")
     assert "Infer" not in dist and ("dict" in dist.lower() or "distribution" in dist.lower())
     rec = render_problem(_make_problem({"kind": "record", "fields": {
