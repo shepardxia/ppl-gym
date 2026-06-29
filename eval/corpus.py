@@ -42,13 +42,17 @@ def batch_executor_for(language: str):
 # Paths
 # ---------------------------------------------------------------------------
 
-_PROBLEMS_DIR = Path("data/problems")
+# Repo-anchored absolutes: cmdstanpy (the Stan executor) can leave the process
+# CWD changed, so relative data paths would read the wrong directory in any
+# later op of the same process (e.g. a pyro combo scored after a stan one).
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_PROBLEMS_DIR = _REPO_ROOT / "data/problems"
 _PROBLEM_FILES = ["probmods2.jsonl", "dippl.jsonl", "forestdb.jsonl",
                   "posteriordb.jsonl"]
 
 
 def _realizations_path(language: str) -> Path:
-    return Path("data/realizations") / f"{language}.jsonl"
+    return _REPO_ROOT / "data/realizations" / f"{language}.jsonl"
 
 
 # ---------------------------------------------------------------------------

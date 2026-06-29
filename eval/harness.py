@@ -119,13 +119,26 @@ def execute_candidate_answer(
     timeout: int = DEFAULT_TIMEOUT,
     workers: int = DEFAULT_MC_WORKERS,
     language: str = "webppl",
+    gt_bundle: str | None = None,
 ) -> object:
     """Execute candidate code and return a canonical answer.
 
     The k=1 case of collect_gt_answers: draws-spec problems collect n_draws
     seeded runs into one canonical answer; others run once at base_seed.
     Candidate (solver) code is one-off, so its runs are not cached.
+
+    Stan: a solver writes a bare model (no data values); pass `gt_bundle` (the
+    GT realization bundle) so the candidate model is repacked around the same
+    data / params / sampling the GT used. Ignored for other languages, and for
+    Stan GT bundles that are already self-contained (pass gt_bundle=None there).
     """
+    if language == "stan" and gt_bundle is not None:
+        from eval.stan_bundle import DEFAULT_SAMPLING, repack_model
+        # Candidate fits use the standard sampler config, never a GT's heavy
+        # gold-reproduction regime — cheaper and keeps a slow solver model
+        # bounded by the per-fit timeout. Measured tolerance handles the
+        # smaller sample size.
+        code = repack_model(gt_bundle, code, sampling=DEFAULT_SAMPLING)
     answers, _ = collect_gt_answers(
         code, spec,
         language=language,

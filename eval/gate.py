@@ -400,6 +400,7 @@ def _judge_problem_b(
                 n_draws=n_draws,
                 timeout=timeout,
                 workers=workers,
+                gt_bundle=realization.get("code"),
             )
         except (RuntimeError, AlgebraError) as exc:
             solver_exec_errors[i] = str(exc)

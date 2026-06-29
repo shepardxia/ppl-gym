@@ -105,8 +105,14 @@ def execute_stan_batch(code: str, seeds, timeout: int, workers: int) -> list:
     if not seeds:
         return []
     with _cwd_guard():
-        b = unpack(code)
-        model = _compiled_model(b.model)  # compile once, reuse across seeds
+        try:
+            b = unpack(code)
+            model = _compiled_model(b.model)  # compile once, reuse across seeds
+        except Exception:
+            # A candidate's malformed or uncompilable Stan model fails the whole
+            # batch cleanly (-> execution failed -> exec_error); it must never
+            # crash the run. (Compile is outside the per-fit guard below.)
+            return [None] * len(seeds)
 
         # Seeds are independent fits. cmdstanpy already parallelizes chains within
         # a fit; run a few fits concurrently but keep total processes bounded.

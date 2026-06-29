@@ -55,6 +55,33 @@ def pack(model: str, data: dict, params: list[str],
     return "\n".join(lines) + "\n"
 
 
+def data_block(bundle: str) -> str:
+    """The verbatim `data { ... }` block from a bundle's model.
+
+    This is the input interface the harness binds by name — emitted into the
+    Stan solver prompt so a solver declares exactly the supplied inputs (it
+    pins the I/O signature, never the model body). Empty string if absent.
+    """
+    model = unpack(bundle).model
+    m = re.search(r"data\s*\{[^}]*\}", model)
+    return m.group(0) if m else ""
+
+
+def repack_model(bundle: str, model: str, sampling: dict | None = None) -> str:
+    """Return a new bundle with `model` swapped in, keeping the original's
+    data and params.
+
+    Used to score a solver's bare Stan model: a solver writes only the program
+    (data block declarations + parameters + model), so it is repacked around the
+    GT bundle's embedded data values and queried params — it runs against the
+    same inputs as the ground-truth realization. ``sampling`` overrides the
+    bundle's sampler config (None keeps it); candidates pass DEFAULT_SAMPLING so
+    a solver's fit never inherits a GT's heavy gold-reproduction regime.
+    """
+    b = unpack(bundle)
+    return pack(model, b.data, b.params, sampling if sampling is not None else b.sampling)
+
+
 def unpack(bundle: str) -> StanBundle:
     """Recover (model, data, params, sampling) from a bundle string.
 

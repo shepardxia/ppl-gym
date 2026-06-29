@@ -127,6 +127,7 @@ def _score_one(
             n_draws=n_draws,
             timeout=timeout,
             workers=workers,
+            gt_bundle=realization.get("code"),
         )
     except AlgebraError as exc:
         return _error_row("malformed", str(exc))
