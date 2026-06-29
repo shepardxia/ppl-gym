@@ -233,8 +233,17 @@
       }
     }
     setSelected(found || META.firstAtomId);
+    // Deep-link / back-forward to a specific problem opens the detail view on
+    // phones; a bare load (no hash) stays on the list.
+    if (location.hash) enterDetail();
   }
   window.addEventListener('hashchange', focusFromHash);
+
+  // Phone single-pane: swap to the detail view / back to the list.
+  const appEl = document.querySelector('.app');
+  function enterDetail() { appEl?.classList.add('is-detail'); }
+  function exitDetail() { appEl?.classList.remove('is-detail'); }
+  document.querySelector('[data-mobile-back]')?.addEventListener('click', exitDetail);
 
   // The hash is the encoded atom id.
   rows.forEach((r) => r.addEventListener('click', () => {
@@ -246,6 +255,7 @@
       history.pushState(null, '', next);
       setSelected(aid);
     }
+    enterDetail();
   }));
 
   // ── Keyboard nav ──────────────────────────────────────────────────────────
@@ -265,6 +275,7 @@
     const aid = list[next].dataset.aid;
     history.pushState(null, '', '#' + encodeURIComponent(aid));
     setSelected(aid);
+    enterDetail();
   }
   function currentAtomId() {
     const active = document.querySelector('.detail.is-active');

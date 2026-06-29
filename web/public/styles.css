@@ -1014,6 +1014,31 @@ button { font-family: inherit; }
   .workspace { grid-template-columns: 240px 1fr; }
 }
 
+/* Phone: single pane. List fills the screen; picking a problem swaps to the
+   detail view (driven by .app.is-detail), with a back button in the topbar. */
+.mobile-back {
+  display: none;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--fg); font: 12.5px var(--font-mono);
+  padding: 4px 6px; border-radius: 4px;
+}
+.mobile-back:hover { background: var(--hover); }
+
+@media (max-width: 720px) {
+  .topbar-mid, .kbd-hint { display: none; }
+  .topbar { gap: 10px; }
+
+  .workspace { display: block; position: relative; }
+  .sidebar, .detail-pane {
+    position: absolute; inset: 0;
+    border-right: 0;
+  }
+  .detail-pane { display: none; }
+  .app.is-detail .sidebar { display: none; }
+  .app.is-detail .detail-pane { display: block; }
+  .app.is-detail .mobile-back { display: inline-flex; }
+}
+
 /* ── Docs pages (Methodology / Updates / Reviewing / Results) ─────────── */
 .page-wrap { max-width: 1100px; margin: 0 auto; padding: 40px 36px 90px; }
 .site-header {
