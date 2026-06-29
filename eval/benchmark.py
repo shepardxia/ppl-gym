@@ -38,8 +38,15 @@ from anthropic import Anthropic
 
 from eval.config import DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
 from eval.corpus import load_corpus
+from eval.backends import (
+    MODELS,
+    ModelConfig,
+    anthropic_requests,
+    build_prompts,
+    resolve,
+    together_generate,
+)
 from eval.generate_batch import (
-    build_requests,
     collect_results,
     submit_batch,
     wait_for_batch,
@@ -47,36 +54,18 @@ from eval.generate_batch import (
 )
 from eval.score import run_scoring
 
-# Short aliases -> exact model ids (full ids pass through unchanged).
-MODEL_ALIASES = {
-    "opus": "claude-opus-4-8",
-    "opus-4-8": "claude-opus-4-8",
-    "sonnet": "claude-sonnet-4-6",
-    "sonnet-4-6": "claude-sonnet-4-6",
-    "haiku": "claude-haiku-4-5-20251001",
-    "haiku-4-5": "claude-haiku-4-5-20251001",
-}
-
 # Per-combo summary fields lifted from score.run_scoring's summary row.
 SUMMARY_COLS = ["n", "pass", "fail", "ill_posed", "malformed", "exec_error", "pass_rate"]
 
 
-def resolve_model(m: str) -> str:
-    return MODEL_ALIASES.get(m, m)
-
-
-def model_slug(m: str) -> str:
-    """Filesystem-safe short label for a model id."""
-    return resolve_model(m).replace("claude-", "").replace("/", "_")
-
-
 @dataclass
 class Combo:
-    model: str            # resolved model id
+    cfg: ModelConfig
     language: str
-    problems: list = field(default_factory=list)  # scorable set, carried submit->write
-    batch_id: str = ""
-    needs_collect: bool = True  # False when generations.jsonl is already on disk
+    problems: list = field(default_factory=list)
+    prompts: list | None = None   # built only when generation is needed
+    batch_id: str = ""            # anthropic only
+    needs_collect: bool = True    # False when generations.jsonl is already on disk
 
 
 def _scorable_problems(language: str, ids, limit) -> list[dict]:
@@ -129,52 +118,60 @@ def _scored_summary(scored_path: Path) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def collect_and_score(client, combo: Combo, out_dir: Path, *, n_solvers, seed,
-                      n_draws, timeout, workers, poll_interval, poll_timeout) -> dict:
-    slug = f"{model_slug(combo.model)}__{combo.language}"
+                      n_draws, timeout, workers, gen_workers,
+                      poll_interval, poll_timeout) -> dict:
+    cfg = combo.cfg
+    slug = f"{cfg.name}__{combo.language}"
     cdir = out_dir / slug
     cdir.mkdir(parents=True, exist_ok=True)
     gens = cdir / "generations.jsonl"
     scored = cdir / "scored.jsonl"
 
     if combo.needs_collect:
-        print(f"[collect] {slug}: polling {combo.batch_id} ...", flush=True)
-        wait_for_batch(client, combo.batch_id, poll_interval=poll_interval, timeout=poll_timeout)
-        results = collect_results(client, combo.batch_id)
+        if cfg.backend == "anthropic":
+            print(f"[collect] {slug}: polling {combo.batch_id} ...", flush=True)
+            wait_for_batch(client, combo.batch_id, poll_interval=poll_interval, timeout=poll_timeout)
+            results = collect_results(client, combo.batch_id)
+        else:  # together — concurrent chat completions
+            print(f"[generate]{slug}: {len(combo.prompts)} reqs via together "
+                  f"({cfg.model_id}) ...", flush=True)
+            results = together_generate(combo.prompts, cfg, workers=gen_workers)
         write_generation_rows(combo.problems, results, gens,
-                              model=combo.model, language=combo.language, n_solvers=n_solvers)
+                              model=cfg.model_id, language=combo.language, n_solvers=n_solvers)
 
     print(f"[score]   {slug}: executing + judging {len(combo.problems)} problems ...", flush=True)
     summary = run_scoring(gens, scored, language=combo.language,
                           seed=seed, n_draws=n_draws, timeout=timeout, workers=workers)
-    return {"model": combo.model, "language": combo.language,
-            "batch_id": combo.batch_id, **{k: summary.get(k) for k in SUMMARY_COLS}}
+    return {"model": cfg.name, "language": combo.language,
+            **{k: summary.get(k) for k in SUMMARY_COLS}}
 
 
-def run_benchmark(models, languages, *, out_dir, ids=None, limit=None, n_solvers=3,
+def run_benchmark(model_names, languages, *, out_dir, ids=None, limit=None, n_solvers=3,
                   with_primer=True, verbose_primer=False,
                   seed=DEFAULT_SEED, n_draws=DEFAULT_N_MC, timeout=DEFAULT_TIMEOUT,
-                  score_workers=4, poll_interval=30, poll_timeout=3600) -> list[dict]:
-    """Submit + score a (model x language) grid. Resumable: a combo already
-    scored is reused; an already-submitted batch (in batches.jsonl) or
-    already-collected generations.jsonl is never re-submitted."""
+                  score_workers=4, gen_workers=16, poll_interval=30,
+                  poll_timeout=3600) -> list[dict]:
+    """Submit + score a (model x language) grid across backends. Resumable: a
+    scored combo is reused, an already-submitted Anthropic batch (batches.jsonl)
+    or already-collected generations.jsonl is never re-generated."""
     # Absolute path: the Stan executor (cmdstanpy) can leave the process CWD
     # changed, so any relative file op here could land in the wrong directory.
     out_dir = Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    client = Anthropic()
+    configs = [resolve(n) for n in model_names]
+    client = Anthropic() if any(c.backend == "anthropic" for c in configs) else None
     manifest = _load_manifest(out_dir)
 
     rows: list[dict] = []
     pending: list[Combo] = []
-    for model in models:
-        rid = resolve_model(model)
+    for cfg in configs:
         for language in languages:
-            slug = f"{model_slug(rid)}__{language}"
+            slug = f"{cfg.name}__{language}"
             cdir = out_dir / slug
             cached = _scored_summary(cdir / "scored.jsonl")
             if cached is not None:
                 print(f"[cached] {slug}: already scored", flush=True)
-                rows.append({"model": rid, "language": language,
+                rows.append({"model": cfg.name, "language": language,
                              **{k: cached.get(k) for k in SUMMARY_COLS}})
                 continue
             problems = _scorable_problems(language, ids, limit)
@@ -183,26 +180,28 @@ def run_benchmark(models, languages, *, out_dir, ids=None, limit=None, n_solvers
                 continue
             gens_exist = (cdir / "generations.jsonl").exists()
             batch_id = manifest.get(slug, "")
-            if not gens_exist and not batch_id:
-                requests = build_requests(problems, language=language, model=rid,
-                                          n_solvers=n_solvers, with_primer=with_primer,
-                                          verbose_primer=verbose_primer)
-                batch_id = submit_batch(client, requests)
-                manifest[slug] = batch_id
-                _save_manifest(out_dir, manifest)
-                print(f"[submit] {slug}: {len(problems)} x {n_solvers} = "
-                      f"{len(requests)} reqs -> {batch_id}", flush=True)
-            elif gens_exist:
-                print(f"[rescore]{slug}: generations on disk, re-scoring", flush=True)
+            prompts = None
+            if not gens_exist:
+                prompts = build_prompts(problems, language, n_solvers=n_solvers,
+                                        with_primer=with_primer, verbose_primer=verbose_primer)
+                if cfg.backend == "anthropic" and not batch_id:
+                    batch_id = submit_batch(client, anthropic_requests(prompts, cfg))
+                    manifest[slug] = batch_id
+                    _save_manifest(out_dir, manifest)
+                    print(f"[submit] {slug}: {len(prompts)} reqs -> {batch_id}", flush=True)
+                elif cfg.backend == "anthropic":
+                    print(f"[reuse]  {slug}: batch {batch_id}", flush=True)
+                else:
+                    print(f"[queued] {slug}: {len(prompts)} together reqs", flush=True)
             else:
-                print(f"[reuse]  {slug}: batch {batch_id}", flush=True)
-            pending.append(Combo(rid, language, problems, batch_id,
+                print(f"[rescore]{slug}: generations on disk, re-scoring", flush=True)
+            pending.append(Combo(cfg, language, problems, prompts, batch_id,
                                  needs_collect=not gens_exist))
 
     for combo in pending:
         rows.append(collect_and_score(
             client, combo, out_dir, n_solvers=n_solvers, seed=seed, n_draws=n_draws,
-            timeout=timeout, workers=score_workers,
+            timeout=timeout, workers=score_workers, gen_workers=gen_workers,
             poll_interval=poll_interval, poll_timeout=poll_timeout))
         _write_comparison(out_dir, rows)  # checkpoint after every combo
     return rows
@@ -216,8 +215,8 @@ def render_comparison(rows: list[dict]) -> str:
     header = ["model", "language", *SUMMARY_COLS]
     lines = ["| " + " | ".join(header) + " |",
              "| " + " | ".join("---" for _ in header) + " |"]
-    for r in sorted(rows, key=lambda r: (r["language"], model_slug(r["model"]))):
-        cells = [model_slug(r["model"]), r["language"]]
+    for r in sorted(rows, key=lambda r: (r["language"], r["model"])):
+        cells = [r["model"], r["language"]]
         for c in SUMMARY_COLS:
             v = r.get(c)
             if c == "pass_rate" and v is not None:
@@ -271,7 +270,8 @@ def dump_failures(out_dir) -> None:
                     "distance": r.get("distance"), "tol": r.get("tol"),
                     "metric": r.get("metric"),
                     "spec": prob.get("answer_spec") if prob else None,
-                    "prompt": render_problem(prob, language=language) if prob else None,
+                    "prompt": render_problem(prob, language=language,
+                                             realization=real_by.get(pid)) if prob else None,
                     "solver_code": r.get("code", ""),
                     "gt_code": real_by.get(pid, {}).get("code", ""),
                 }) + "\n")
@@ -311,7 +311,7 @@ def main() -> None:
 
     rp = sub.add_parser("run", help="Submit + score a model x language grid.")
     rp.add_argument("--models", required=True,
-                    help="Comma-separated model ids/aliases (e.g. sonnet,haiku).")
+                    help="Comma-separated registry names: " + ",".join(MODELS))
     rp.add_argument("--languages", required=True,
                     help="Comma-separated languages (webppl,pyro,stan).")
     rp.add_argument("--out", required=True, help="Output run directory.")
@@ -326,6 +326,8 @@ def main() -> None:
     rp.add_argument("--n-draws", type=int, default=DEFAULT_N_MC)
     rp.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     rp.add_argument("--workers", type=int, default=4, help="Score-time problem-parallelism.")
+    rp.add_argument("--gen-workers", type=int, default=16,
+                    help="Concurrent requests for the together backend.")
     rp.add_argument("--poll-interval", type=int, default=30)
     rp.add_argument("--poll-timeout", type=int, default=3600)
 
@@ -345,8 +347,8 @@ def main() -> None:
             out_dir=args.out, ids=args.ids, limit=args.limit, n_solvers=args.n_samples,
             with_primer=not args.no_primer, verbose_primer=args.verbose_primer,
             seed=args.seed, n_draws=args.n_draws, timeout=args.timeout,
-            score_workers=args.workers, poll_interval=args.poll_interval,
-            poll_timeout=args.poll_timeout,
+            score_workers=args.workers, gen_workers=args.gen_workers,
+            poll_interval=args.poll_interval, poll_timeout=args.poll_timeout,
         )
     else:
         report(args.out)

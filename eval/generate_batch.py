@@ -30,8 +30,7 @@ from pathlib import Path
 
 from anthropic import Anthropic
 
-from eval.prompt import parse_response, system_prompt
-from eval.render import render_problem
+from eval.prompt import parse_response
 
 
 DEFAULT_MAX_TOKENS = 4096
@@ -84,38 +83,16 @@ def build_requests(
 
     Returns a list of request dicts ready for submit_batch. The primer is a knob:
     `with_primer=False` is the no-primer arm; `verbose_primer=True` swaps the lean
-    primer for the heavier hand-holding variant.
+    primer for the heavier hand-holding variant. (Thin wrapper over the shared
+    prompt builder + Anthropic packaging in eval.backends.)
     """
-    sys_text = system_prompt(with_primer=with_primer, language=language,
-                             verbose=verbose_primer)
-    system_blocks = [{
-        "type": "text",
-        "text": sys_text,
-        "cache_control": {"type": "ephemeral"},
-    }]
-
-    # Stan pins its data-block interface from the GT bundle; other languages
-    # render from the problem alone. Load realizations once for the join.
-    from eval.corpus import load_realizations
-    real_by_id = {r["problem_id"]: r for r in load_realizations(language)} if language == "stan" else {}
-
-    requests = []
-    for prob in problems:
-        user_text = render_problem(prob, language=language,
-                                   realization=real_by_id.get(prob["problem_id"]))
-        for slot in range(n_solvers):
-            cid = problem_id_to_cid(prob["problem_id"], slot)
-            requests.append({
-                "custom_id": cid,
-                "params": {
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                    "system": system_blocks,
-                    "messages": [{"role": "user", "content": user_text}],
-                },
-            })
-    return requests
+    # Lazy import: eval.backends imports this module's cid/constants at load.
+    from eval.backends import ModelConfig, anthropic_requests, build_prompts
+    prompts = build_prompts(problems, language, n_solvers=n_solvers,
+                            with_primer=with_primer, verbose_primer=verbose_primer)
+    cfg = ModelConfig(name="", backend="anthropic", model_id=model,
+                      max_tokens=max_tokens, temperature=temperature)
+    return anthropic_requests(prompts, cfg)
 
 
 # ---------------------------------------------------------------------------
