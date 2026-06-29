@@ -367,16 +367,19 @@ def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1) ->
                 capture_output=True, text=True, timeout=timeout,
             )
         except subprocess.TimeoutExpired:
-            return [None] * len(seeds)
+            # Whole-batch failures (the subprocess died) propagate their reason as
+            # a RuntimeError -> caught downstream as exec_error WITH the cause, not
+            # the generic "execution failed". Per-seed model errors below stay None.
+            raise RuntimeError(f"timeout after {timeout}s")
         if proc.returncode != 0:
-            return [None] * len(seeds)
+            raise RuntimeError(_extract_error(proc.stderr or proc.stdout))
         stdout = proc.stdout.strip()
         try:
             raw = loads_lenient(stdout)
         except json.JSONDecodeError:
-            return [None] * len(seeds)
+            raise RuntimeError("non-JSON output from pyro program")
         if not isinstance(raw, list) or len(raw) != len(seeds):
-            return [None] * len(seeds)
+            raise RuntimeError("pyro batch returned the wrong number of results")
         return [
             None if (isinstance(a, dict) and "__pplgym_error__" in a) else a
             for a in raw

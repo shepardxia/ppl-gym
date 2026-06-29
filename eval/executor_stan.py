@@ -108,11 +108,20 @@ def execute_stan_batch(code: str, seeds, timeout: int, workers: int) -> list:
         try:
             b = unpack(code)
             model = _compiled_model(b.model)  # compile once, reuse across seeds
-        except Exception:
-            # A candidate's malformed or uncompilable Stan model fails the whole
-            # batch cleanly (-> execution failed -> exec_error); it must never
-            # crash the run. (Compile is outside the per-fit guard below.)
-            return [None] * len(seeds)
+        except Exception as e:
+            # A candidate's malformed or uncompilable Stan model: propagate the
+            # reason as a RuntimeError (caught downstream -> exec_error WITH the
+            # cause, not the generic "execution failed"); never a raw crash.
+            msg = str(e)
+            detail = next((ln.strip() for ln in msg.splitlines()
+                           if "error" in ln.lower() or "exception" in ln.lower()), msg[:200])
+            raise RuntimeError(f"stan compile failed: {detail[:200]}")
+
+        # Scale the per-fit timeout with the data size: a large-N posterior needs
+        # proportionally more wall-clock than the flat default to converge (a flat
+        # 60s systematically fails big models like diamonds, N=5000). Cap at 10x.
+        n = max((len(v) for v in b.data.values() if isinstance(v, list)), default=1)
+        fit_timeout = min(timeout * max(1, -(-n // 1000)), timeout * 10) if timeout else timeout
 
         # Seeds are independent fits. cmdstanpy already parallelizes chains within
         # a fit; run a few fits concurrently but keep total processes bounded.
@@ -120,7 +129,7 @@ def execute_stan_batch(code: str, seeds, timeout: int, workers: int) -> list:
         fit_workers = max(1, min(len(seeds), max(1, workers // chains)))
 
         def run(seed: int):
-            return _one_fit(model, b.data, b.params, b.sampling, seed, timeout)
+            return _one_fit(model, b.data, b.params, b.sampling, seed, fit_timeout)
 
         if fit_workers == 1:
             return [run(s) for s in seeds]
