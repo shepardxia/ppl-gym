@@ -20,11 +20,11 @@ PYRO_SYSTEM_BASE = (_PROMPTS_DIR / "pyro_system_base.txt").read_text().rstrip("\
 STAN_SYSTEM_BASE = (_PROMPTS_DIR / "stan_system_base.txt").read_text().rstrip("\n")
 WEBPPL_PRIMER = (_PROMPTS_DIR / "webppl_primer.txt").read_text().rstrip("\n")
 PYRO_PRIMER = (_PROMPTS_DIR / "pyro_primer.txt").read_text().rstrip("\n")
+STAN_PRIMER = (_PROMPTS_DIR / "stan_primer.txt").read_text().rstrip("\n")
 
 _SYSTEM_BASE = {"webppl": WEBPPL_SYSTEM_BASE, "pyro": PYRO_SYSTEM_BASE, "stan": STAN_SYSTEM_BASE}
-# Primers level the playing field for PPLs models rarely saw in pretraining. Only
-# webppl/pyro have one; stan (posteriordb) has none.
-_PRIMER = {"webppl": WEBPPL_PRIMER, "pyro": PYRO_PRIMER}
+# Primers level the playing field for PPLs models rarely saw in pretraining.
+_PRIMER = {"webppl": WEBPPL_PRIMER, "pyro": PYRO_PRIMER, "stan": STAN_PRIMER}
 
 
 def _base_for(language: str) -> str:

@@ -22,6 +22,8 @@ No wire formats, no ``__kind``, no ``probs``, no ``support`` tokens.
 
 from __future__ import annotations
 
+import json
+
 from eval.algebra import Spec, _has_draws_field, parse_spec
 
 
@@ -270,11 +272,56 @@ def _field_contract_inline(name: str, spec: Spec, language: str = "webppl") -> s
     return "a record"
 
 
+def _has_object_labels(spec: Spec) -> bool:
+    """True if any finite leaf has object-valued labels (record labels, or
+    support elements that are JSON objects). Python cannot hash these, so the
+    solver needs an explicit encoding instruction."""
+    if spec.kind == "record":
+        return any(_has_object_labels(f) for _, f in spec.fields)
+    if spec.domain == "finite":
+        if spec.labels:
+            return True
+        for k in (spec.support or ()):
+            try:
+                if isinstance(json.loads(k), dict):
+                    return True
+            except (ValueError, TypeError):
+                pass
+    return False
+
+
+# Python-only: object outcomes are unhashable, so a solver cannot key a dict by
+# the object. Tell it the two encodings the canonicalizer accepts.
+_OBJECT_LABEL_CLAUSE = (
+    "Note on object-valued outcomes: each outcome is an object (a dict of the "
+    "named fields), which is not hashable in Python — do NOT use the object, a "
+    "tuple, or a frozenset as a dict key. Return EITHER a list of many sampled "
+    "outcome objects (each a dict with the named fields), OR a dict whose keys "
+    "are `json.dumps(outcome, sort_keys=True)` and whose values are the probabilities."
+)
+
+
+def _data_interface_section(realization: dict) -> str:
+    """The Stan data-block signature section: pins the input I/O interface."""
+    from eval.stan_bundle import data_block
+    block = data_block(realization.get("code", ""))
+    if not block:
+        return ""
+    return (
+        "## Data interface\n"
+        "The harness supplies these inputs; your `data` block must declare them "
+        "exactly, by name and type. Values arrive **raw** — compute any transforms "
+        "(logs, standardization, interactions, …) inside your program.\n\n"
+        "```stan\n" + block + "\n```"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public renderer
 # ---------------------------------------------------------------------------
 
-def render_problem(problem: dict, language: str = "webppl") -> str:
+def render_problem(problem: dict, language: str = "webppl",
+                   realization: dict | None = None) -> str:
     """Render a problem dict into the user-message text for the LLM.
 
     Parameters
@@ -304,6 +351,9 @@ def render_problem(problem: dict, language: str = "webppl") -> str:
     if language not in _LANG:
         raise ValueError(f"unknown language: {language!r}")
     contract = _contract_paragraph(spec, language)
+    # Python solvers need the object-key encoding spelled out (unhashable outcomes).
+    if language == "pyro" and _has_object_labels(spec):
+        contract = contract + "\n\n" + _OBJECT_LABEL_CLAUSE
 
     parts = []
     if given:
@@ -312,6 +362,12 @@ def render_problem(problem: dict, language: str = "webppl") -> str:
         parts.append(f"## Model\n{model}")
     if query:
         parts.append(f"## Task\n{query}")
+    # Stan: pin the data-block I/O interface from the GT bundle (inputs the
+    # harness binds by name), so the solver's program actually runs.
+    if language == "stan" and realization is not None:
+        section = _data_interface_section(realization)
+        if section:
+            parts.append(section)
     parts.append(f"## Answer format\n{contract}")
 
     return "\n\n".join(parts)

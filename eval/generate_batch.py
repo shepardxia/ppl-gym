@@ -1,12 +1,13 @@
 """Submit problem generations as an Anthropic Message Batch (50% discount, async).
 
-Public API consumed by eval.gate:
+Public API consumed by eval.gate and eval.benchmark:
   build_requests(problems, language, model, n_solvers, max_tokens, temperature)
   problem_id_to_cid(problem_id, slot)
   cid_to_problem_slot(cid)
   submit_batch(client, requests)
   wait_for_batch(client, batch_id, ...)
   collect_results(client, batch_id)
+  write_generation_rows(problems, results, output_path, *, model, language, n_solvers)
 
 CLI:
   PYTHONPATH=. .venv/bin/python -m eval.generate_batch \\
@@ -88,9 +89,15 @@ def build_requests(
         "cache_control": {"type": "ephemeral"},
     }]
 
+    # Stan pins its data-block interface from the GT bundle; other languages
+    # render from the problem alone. Load realizations once for the join.
+    from eval.corpus import load_realizations
+    real_by_id = {r["problem_id"]: r for r in load_realizations(language)} if language == "stan" else {}
+
     requests = []
     for prob in problems:
-        user_text = render_problem(prob, language=language)
+        user_text = render_problem(prob, language=language,
+                                   realization=real_by_id.get(prob["problem_id"]))
         for slot in range(n_solvers):
             cid = problem_id_to_cid(prob["problem_id"], slot)
             requests.append({
@@ -187,7 +194,7 @@ def collect_results(client: Anthropic, batch_id: str) -> dict:
 # Generation row writer
 # ---------------------------------------------------------------------------
 
-def _write_generation_rows(
+def write_generation_rows(
     problems: list[dict],
     results: dict,
     output_path: Path,
@@ -296,7 +303,7 @@ def main() -> None:
             print(f"[generate_batch] batch not ended yet (status={batch.processing_status}), waiting...")
             wait_for_batch(client, batch_id, poll_interval=args.poll_interval, timeout=args.timeout)
         results = collect_results(client, batch_id)
-        _write_generation_rows(
+        write_generation_rows(
             problems, results, output_path,
             model=args.model, language=args.language, n_solvers=n_solvers,
         )
@@ -325,7 +332,7 @@ def main() -> None:
 
     print("[generate_batch] streaming results...")
     results = collect_results(client, batch_id)
-    _write_generation_rows(
+    write_generation_rows(
         problems, results, output_path,
         model=args.model, language=args.language, n_solvers=n_solvers,
     )

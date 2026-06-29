@@ -12,8 +12,11 @@ Random primitives - lowercase samples directly, uppercase constructs a Distribut
   beta(a, b)         -> number              (sample)
   dirichlet(alpha)   -> tensor              (sample; alpha must be a Vector)
   randomInteger(n)   -> int 0..n-1          (sample)
+  uniformDraw(arr)   -> element             (sample one element uniformly from a JS array)
   uniformDrift({a, b, width})        -> sample  (drift kernel; do NOT wrap in sample())
   dirichletDrift({alpha, conc.})     -> sample  (drift kernel; do NOT wrap in sample())
+
+Drift kernels (`uniformDrift`, `dirichletDrift`) are ONLY for MCMC perturbation — they cannot be enumerated. Under `Infer({method:'enumerate'})` (or for a discrete choice over a finite set) use `uniformDraw`, `randomInteger`, `flip`, or `categorical`, never a drift kernel.
 
 Distribution *constructors* (used with `sample(D)`, `observe(D, val)`, or as return value of inference):
   Bernoulli({p})              Beta({a, b})              Gaussian({mu, sigma})
@@ -21,6 +24,7 @@ Distribution *constructors* (used with `sample(D)`, `observe(D, val)`, or as ret
   Dirichlet({alpha})          Multinomial({ps, n})      Poisson({mu})
 
 Common gotchas:
+- `flip(p)` and `Bernoulli({p})` are over booleans (`true`/`false`), NOT 0/1. Observe boolean events: `observe(Bernoulli({p}), true)`. Observing `1`/`0` against a Bernoulli scores a NaN and hangs MCMC — condition on the boolean instead.
 - `Dirichlet({alpha: ...})` requires a Vector, not a JS array. Use `ones([n, 1])` or `Vector([1, 1, ...])`.
 - WebPPL only supports `var`, not `let` / `const`.
 - WebPPL is *single-assignment*: `var X = ...;` only. You can't declare `var X;` and assign later, and you can't reassign `X = ...` after the declaration. Use ternaries or recursion to express conditional bindings.

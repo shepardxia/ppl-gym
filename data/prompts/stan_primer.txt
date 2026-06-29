@@ -1,0 +1,13 @@
+Stan is a statically-typed probabilistic programming language for Bayesian inference; the harness compiles your program with a current Stan (2.30+) and samples the posterior with NUTS.
+
+Program blocks, in order: `functions`, `data`, `transformed data`, `parameters`, `transformed parameters`, `model`, `generated quantities`. Declare every input in `data` (the harness binds values to those names). Declare each queried quantity as a `parameter` (or in `transformed parameters` / `generated quantities`) under exactly the name the task specifies.
+
+Modern array syntax is REQUIRED — the old form is a compile error. Write `array[N] real x;`, `array[N] vector[2] v;`, `array[N, M] int y;`. The legacy `real x[N];` / `vector[2] v[N];` no longer parses.
+
+Types: `int`, `real`, `vector[N]`, `row_vector[N]`, `matrix[N, M]`, `simplex[K]`, with constraints `<lower=...>` / `<upper=...>`. Vectorize where possible: `y ~ normal(mu, sigma);` over a `vector[N] y` is faster and clearer than a loop.
+
+Data arrives raw — apply any log / standardization / interaction transforms yourself (typically in `transformed data`): `log_y = log(y);`, `z = (x - mean(x)) / sd(x);`, elementwise product with `.*`.
+
+Priors: state every prior in the `model` block. A parameter with no prior statement gets an implicit (improper) uniform over its declared support — that may be exactly what a "flat / improper uniform prior" task wants, or not; match the task.
+
+Emit only the program. Do not print, embed data values, or set sampler options — the harness supplies the data and the sampler and reads each named parameter's marginal posterior.
