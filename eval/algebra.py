@@ -441,7 +441,12 @@ def _enum_from_dict(
     for v, p in zip(raw_support, probs):
         if p is None:
             continue
-        p = float(p)
+        try:
+            p = float(p)
+        except (TypeError, ValueError):
+            # a malformed candidate (e.g. a probability that is a dict/list) must
+            # be rejected as malformed, never crash the whole scoring run.
+            raise AlgebraError(f"non-numeric probability {p!r}")
         # reject non-finite probabilities: NaN/Inf corrupt normalisation
         if not math.isfinite(p) or p < 0:
             raise AlgebraError(f"invalid probability {p!r}")

@@ -133,12 +133,16 @@ def _score_one(
         return _error_row("malformed", str(exc))
     except RuntimeError as exc:
         return _error_row("exec_error", str(exc))
+    except Exception as exc:  # backstop: a malformed candidate never kills the run
+        return _error_row("exec_error", f"unexpected: {str(exc)[:200]}")
 
     # Judge
     try:
         v = verdict(canon, gts, spec)
     except AlgebraError as exc:
         return _error_row("malformed", f"verdict failed: {exc}")
+    except Exception as exc:
+        return _error_row("exec_error", f"verdict unexpected: {str(exc)[:200]}")
 
     status = status_of(v)
     jac = code_jaccard(code, realization.get("code", ""))
