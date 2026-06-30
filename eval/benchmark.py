@@ -149,7 +149,7 @@ def collect_and_score(client, combo: Combo, out_dir: Path, *, n_solvers, seed,
 def run_benchmark(model_names, languages, *, out_dir, ids=None, limit=None, n_solvers=3,
                   with_primer=True, verbose_primer=False,
                   seed=DEFAULT_SEED, n_draws=DEFAULT_N_MC, timeout=DEFAULT_TIMEOUT,
-                  score_workers=4, gen_workers=16, poll_interval=30,
+                  score_workers=4, gen_workers=16, combo_workers=1, poll_interval=30,
                   poll_timeout=3600) -> list[dict]:
     """Submit + score a (model x language) grid across backends. Resumable: a
     scored combo is reused, an already-submitted Anthropic batch (batches.jsonl)
@@ -198,12 +198,29 @@ def run_benchmark(model_names, languages, *, out_dir, ids=None, limit=None, n_so
             pending.append(Combo(cfg, language, problems, prompts, batch_id,
                                  needs_collect=not gens_exist))
 
-    for combo in pending:
-        rows.append(collect_and_score(
+    def _one(combo):
+        return collect_and_score(
             client, combo, out_dir, n_solvers=n_solvers, seed=seed, n_draws=n_draws,
             timeout=timeout, workers=score_workers, gen_workers=gen_workers,
-            poll_interval=poll_interval, poll_timeout=poll_timeout))
-        _write_comparison(out_dir, rows)  # checkpoint after every combo
+            poll_interval=poll_interval, poll_timeout=poll_timeout)
+
+    if combo_workers <= 1:
+        for combo in pending:
+            rows.append(_one(combo))
+            _write_comparison(out_dir, rows)  # checkpoint after every combo
+    else:
+        # Run combos concurrently to saturate the box. Each writes its own combo
+        # dir; only the shared comparison file needs a lock. (All eval paths are
+        # absolute, so a concurrent Stan combo's CWD churn can't misdirect others.)
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from threading import Lock
+        lock = Lock()
+        with ThreadPoolExecutor(max_workers=combo_workers) as ex:
+            futs = [ex.submit(_one, combo) for combo in pending]
+            for fut in as_completed(futs):
+                with lock:
+                    rows.append(fut.result())
+                    _write_comparison(out_dir, rows)
     return rows
 
 
@@ -278,26 +295,37 @@ def dump_failures(out_dir) -> None:
         print(f"{cdir.name}: {len(rows)} failures")
 
 
+def _rows_from_dir(out_dir: Path) -> list[dict]:
+    """One summary row per scored combo subdir of `out_dir`."""
+    rows: list[dict] = []
+    out_dir = Path(out_dir)
+    if not out_dir.is_dir():
+        return rows
+    for cdir in sorted(p for p in out_dir.iterdir() if p.is_dir()):
+        summary = _scored_summary(cdir / "scored.jsonl")
+        if summary:
+            model, _, language = cdir.name.partition("__")
+            rows.append({"model": model, "language": language,
+                         **{k: summary.get(k) for k in SUMMARY_COLS}})
+    return rows
+
+
 def report(out_dir) -> list[dict]:
     """Re-aggregate the comparison from each combo's scored.jsonl summary on disk."""
     out_dir = Path(out_dir).resolve()
-    rows: list[dict] = []
-    for cdir in sorted(p for p in out_dir.iterdir() if p.is_dir()):
-        scored = cdir / "scored.jsonl"
-        if not scored.exists():
-            continue
-        model, _, language = cdir.name.partition("__")
-        summary = None
-        for line in scored.read_text().splitlines():
-            if not line.strip():
-                continue
-            d = json.loads(line)
-            if d.get("summary"):
-                summary = d
-        if summary:
-            rows.append({"model": model, "language": language,
-                         **{k: summary.get(k) for k in SUMMARY_COLS}})
+    rows = _rows_from_dir(out_dir)
     _write_comparison(out_dir, rows)
+    return rows
+
+
+def combine(dirs, out) -> list[dict]:
+    """One comparison table across several per-model run dirs (the matrix)."""
+    rows: list[dict] = []
+    for d in dirs:
+        rows.extend(_rows_from_dir(Path(d)))
+    out = Path(out).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    _write_comparison(out, rows)
     return rows
 
 
@@ -328,11 +356,17 @@ def main() -> None:
     rp.add_argument("--workers", type=int, default=4, help="Score-time problem-parallelism.")
     rp.add_argument("--gen-workers", type=int, default=16,
                     help="Concurrent requests for the together backend.")
+    rp.add_argument("--combo-workers", type=int, default=1,
+                    help="Run this many (model x language) combos concurrently (box saturation).")
     rp.add_argument("--poll-interval", type=int, default=30)
     rp.add_argument("--poll-timeout", type=int, default=3600)
 
     rep = sub.add_parser("report", help="Re-aggregate comparison from a run directory.")
     rep.add_argument("--out", required=True)
+
+    cp = sub.add_parser("combine", help="One comparison table across several per-model run dirs.")
+    cp.add_argument("--dirs", nargs="+", required=True, help="Per-model run directories.")
+    cp.add_argument("--out", required=True, help="Where to write the combined comparison.")
 
     fp = sub.add_parser("failures", help="Dump per-combo failures.jsonl (with prompt + GT) for investigation.")
     fp.add_argument("--out", required=True)
@@ -340,6 +374,8 @@ def main() -> None:
     args = ap.parse_args()
     if args.cmd == "failures":
         dump_failures(args.out)
+    elif args.cmd == "combine":
+        combine(args.dirs, args.out)
     elif args.cmd == "run":
         run_benchmark(
             [m.strip() for m in args.models.split(",") if m.strip()],
@@ -348,6 +384,7 @@ def main() -> None:
             with_primer=not args.no_primer, verbose_primer=args.verbose_primer,
             seed=args.seed, n_draws=args.n_draws, timeout=args.timeout,
             score_workers=args.workers, gen_workers=args.gen_workers,
+            combo_workers=args.combo_workers,
             poll_interval=args.poll_interval, poll_timeout=args.poll_timeout,
         )
     else:
