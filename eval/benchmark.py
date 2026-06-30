@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from anthropic import Anthropic
@@ -48,6 +48,7 @@ from eval.backends import (
 )
 from eval.generate_batch import (
     collect_results,
+    problem_id_to_cid,
     submit_batch,
     wait_for_batch,
     write_generation_rows,
@@ -318,6 +319,73 @@ def report(out_dir) -> list[dict]:
     return rows
 
 
+def regen_empty(dirs, *, token_factor=2, max_tokens=None, gen_workers=16,
+                seed=DEFAULT_SEED, n_draws=DEFAULT_N_MC, timeout=DEFAULT_TIMEOUT,
+                score_workers=6, poll_interval=30, poll_timeout=3600) -> None:
+    """Re-generate generation rows with EMPTY code (truncated / unfinished), patch
+    them in place, and re-score the affected combos.
+
+    `dirs` are per-model run directories (each has <model>__<lang> combo subdirs).
+    Empty rows get a larger token budget — `max_tokens` if given, else the model's
+    own budget x `token_factor` — so a re-truncation is far less likely.
+    """
+    from anthropic import Anthropic
+
+    for d in dirs:
+        d = Path(d)
+        if not d.is_dir():
+            continue
+        for cdir in sorted(p for p in d.iterdir() if p.is_dir()):
+            gpath = cdir / "generations.jsonl"
+            if not gpath.exists():
+                continue
+            model, _, language = cdir.name.partition("__")
+            try:
+                cfg = resolve(model)
+            except ValueError:
+                continue
+            rows = [json.loads(l) for l in gpath.read_text().splitlines() if l.strip()]
+            empties = [r for r in rows if not (r.get("code") or "").strip()]
+            if not empties:
+                continue
+            # bigger budget so the re-gen does not truncate again
+            bumped = max_tokens or cfg.max_tokens * token_factor
+            cfg = replace(cfg, max_tokens=bumped)
+            print(f"[regen] {cdir.name}: {len(empties)} empty -> regen at max_tokens={bumped}", flush=True)
+
+            # rebuild only the empty (problem, slot) prompts (build_prompts is the
+            # single render path; filter to the custom_ids we need to redo).
+            pmap = {p["problem_id"]: p for p in _scorable_problems(language, None, None)}
+            problems = [pmap[pid] for pid in {r["problem_id"] for r in empties} if pid in pmap]
+            max_slot = max(r["slot"] for r in empties)
+            want = {problem_id_to_cid(r["problem_id"], r["slot"]) for r in empties}
+            prompts = [p for p in build_prompts(problems, language, n_solvers=max_slot + 1)
+                       if p["custom_id"] in want]
+
+            if cfg.backend == "anthropic":
+                client = Anthropic()
+                bid = submit_batch(client, anthropic_requests(prompts, cfg))
+                wait_for_batch(client, bid, poll_interval=poll_interval, timeout=poll_timeout)
+                results = collect_results(client, bid)
+            else:
+                results = together_generate(prompts, cfg, workers=gen_workers)
+
+            by_cid = {problem_id_to_cid(r["problem_id"], r["slot"]): i for i, r in enumerate(rows)}
+            patched = 0
+            for cid, res in results.items():
+                if (res.get("code") or "").strip() and cid in by_cid:
+                    i = by_cid[cid]
+                    rows[i] = {**rows[i], "code": res["code"],
+                               "warnings": res.get("warnings", []), **res.get("meta", {})}
+                    patched += 1
+            with open(gpath, "w") as f:
+                for r in rows:
+                    f.write(json.dumps(r) + "\n")
+            print(f"[regen] {cdir.name}: patched {patched}/{len(empties)}, re-scoring ...", flush=True)
+            run_scoring(gpath, cdir / "scored.jsonl", language=language,
+                        seed=seed, n_draws=n_draws, timeout=timeout, workers=score_workers)
+
+
 def combine(dirs, out) -> list[dict]:
     """One comparison table across several per-model run dirs (the matrix)."""
     rows: list[dict] = []
@@ -368,6 +436,13 @@ def main() -> None:
     cp.add_argument("--dirs", nargs="+", required=True, help="Per-model run directories.")
     cp.add_argument("--out", required=True, help="Where to write the combined comparison.")
 
+    re = sub.add_parser("regen-empty", help="Re-generate empty/truncated generations (bigger budget) + re-score.")
+    re.add_argument("--dirs", nargs="+", required=True, help="Per-model run directories.")
+    re.add_argument("--max-tokens", type=int, default=None, help="Explicit budget for the re-gen (else 2x the model's).")
+    re.add_argument("--token-factor", type=int, default=2)
+    re.add_argument("--gen-workers", type=int, default=16)
+    re.add_argument("--workers", type=int, default=6)
+
     fp = sub.add_parser("failures", help="Dump per-combo failures.jsonl (with prompt + GT) for investigation.")
     fp.add_argument("--out", required=True)
 
@@ -376,6 +451,9 @@ def main() -> None:
         dump_failures(args.out)
     elif args.cmd == "combine":
         combine(args.dirs, args.out)
+    elif args.cmd == "regen-empty":
+        regen_empty(args.dirs, token_factor=args.token_factor, max_tokens=args.max_tokens,
+                    gen_workers=args.gen_workers, score_workers=args.workers)
     elif args.cmd == "run":
         run_benchmark(
             [m.strip() for m in args.models.split(",") if m.strip()],
