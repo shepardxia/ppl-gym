@@ -1,0 +1,8 @@
+# LaTeX build intermediates
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+preview-*.png
