@@ -325,26 +325,73 @@
     const a = pay[state.a];
     const b = pay[state.b];
 
-    // Update run-pill highlights
-    detailEl.querySelectorAll('.run-pill').forEach((pill) => {
-      const key = pill.dataset.source;
-      pill.classList.toggle('is-source-a', key === state.a);
-      pill.classList.toggle('is-source-b', key === state.b);
-    });
-
-    // Update section-title labels
+    // Update section-title labels (both modes)
     const labelA = detailEl.querySelector('[data-ab-label-a]');
     const labelB = detailEl.querySelector('[data-ab-label-b]');
     if (labelA) labelA.textContent = a?.short ?? state.a;
     if (labelB) labelB.textContent = b?.short ?? state.b;
 
-    // Rebuild compare grid
-    const grid = detailEl.querySelector('[data-compare-grid]');
-    if (grid) grid.innerHTML = compareColHtml(a, 'a') + compareColHtml(b, 'b');
+    const bodyA = detailEl.querySelector('[data-col-body="a"]');
+    if (bodyA) {
+      // Problems browser: column-header <select> picker mode — swap only the
+      // body + badge, leaving the native <select> elements in place.
+      const bodyB = detailEl.querySelector('[data-col-body="b"]');
+      bodyA.innerHTML = srcBody(a);
+      if (bodyB) bodyB.innerHTML = srcBody(b);
+      const badgeA = detailEl.querySelector('[data-col-badge="a"]');
+      const badgeB = detailEl.querySelector('[data-col-badge="b"]');
+      if (badgeA) badgeA.innerHTML = a?.badge ? badgeHtml(a.badge, a.tv) : '';
+      if (badgeB) badgeB.innerHTML = b?.badge ? badgeHtml(b.badge, b.tv) : '';
+      ['a', 'b'].forEach((side) => {
+        const picker = detailEl.querySelector(`[data-src-picker="${side}"]`);
+        if (!picker) return;
+        const key = side === 'a' ? state.a : state.b;
+        let lbl = key;
+        picker.querySelectorAll('[data-src-opt]').forEach((it) => {
+          const on = it.getAttribute('data-src-opt') === key;
+          it.classList.toggle('src-menu-item-on', on);
+          if (on) lbl = it.textContent;
+        });
+        const labEl = picker.querySelector('[data-src-toggle-label]');
+        if (labEl) labEl.textContent = lbl;
+      });
+    } else {
+      // Legacy /c/ pill mode: rebuild the whole grid + pill highlights.
+      detailEl.querySelectorAll('.run-pill').forEach((pill) => {
+        const key = pill.dataset.source;
+        pill.classList.toggle('is-source-a', key === state.a);
+        pill.classList.toggle('is-source-b', key === state.b);
+      });
+      const grid = detailEl.querySelector('[data-compare-grid]');
+      if (grid) grid.innerHTML = compareColHtml(a, 'a') + compareColHtml(b, 'b');
+    }
 
-    // Rebuild chart / value-output slot
+    // Rebuild chart / value-output slot (both modes)
     const slot = detailEl.querySelector('[data-chart-slot]');
     if (slot) slot.innerHTML = renderChartSection(a, b);
+  }
+
+  // Body + badge for the select-picker mode (problems browser). srcBody mirrors
+  // the body branches of compareColHtml; badgeHtml mirrors the server badge.
+  function srcBody(src) {
+    if (!src) return `<div class="out-empty">(unknown source)</div>`;
+    if (src.bodyHtml != null) return src.bodyHtml;
+    if (src.error) {
+      return `<div class="compare-error">` +
+        `<div class="compare-error-hd">execution error</div>` +
+        `<pre class="compare-error-msg">${escapeHtml(src.error)}</pre>` +
+        (src.code ? renderCodeBlock(src.code, src.codeLang || 'webppl') : '') +
+      `</div>`;
+    }
+    if (src.code) return renderCodeBlock(src.code, src.codeLang || 'webppl');
+    return `<div class="out-empty">(no code — this run didn't score this atom)</div>`;
+  }
+  function badgeHtml(badge, tv) {
+    const tvBit = tv != null ? `<span class="bucket-tv">${fmtTV(tv)}</span>` : '';
+    return `<span class="bucket bucket-${badge.tone} bucket-sm">` +
+      `<span class="bucket-glyph">${badge.glyph}</span>` +
+      `<span class="bucket-label">${escapeHtml(badge.label)}</span>` + tvBit +
+    `</span>`;
   }
 
   function compareColHtml(src, side) {
@@ -474,6 +521,33 @@
       const detailEl = asB.closest('.detail');
       if (detailEl) setSource(detailEl, 'b', asB.getAttribute('data-action-as-b'));
       return;
+    }
+  });
+
+  // Problems browser: each compare column header is a custom dropdown over all
+  // sources (left = A, right = B). Toggle opens the menu; an item picks that side.
+  document.addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-src-toggle]');
+    if (toggle) {
+      const menu = toggle.nextElementSibling;
+      const wasOpen = !menu.hidden;
+      document.querySelectorAll('[data-src-menu]').forEach((m) => { m.hidden = true; });
+      menu.hidden = wasOpen;
+      toggle.setAttribute('aria-expanded', String(!wasOpen));
+      return;
+    }
+    const opt = e.target.closest('[data-src-opt]');
+    if (opt) {
+      const picker = opt.closest('[data-src-picker]');
+      const detailEl = opt.closest('.detail');
+      if (detailEl && picker) setSource(detailEl, picker.getAttribute('data-src-picker'), opt.getAttribute('data-src-opt'));
+      const menu = opt.closest('[data-src-menu]');
+      if (menu) menu.hidden = true;
+      return;
+    }
+    // Click anywhere else closes any open source menu.
+    if (!e.target.closest('[data-src-picker]')) {
+      document.querySelectorAll('[data-src-menu]').forEach((m) => { m.hidden = true; });
     }
   });
 

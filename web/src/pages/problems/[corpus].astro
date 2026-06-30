@@ -4,7 +4,7 @@ import Layout from '@/layouts/Layout.astro';
 import ProblemEntry from '@/components/ProblemEntry.astro';
 import type { Corpus, ProblemRecord } from '@/lib/problems';
 import {
-  loadAllProblemsGrouped, loadGtAnswers, CORPORA, CORPUS_META, CORPUS_COLUMNS,
+  loadAllProblemsGrouped, loadGtAnswers, loadRollouts, CORPORA, CORPUS_META, CORPUS_COLUMNS,
   verificationBucket, problemChapter, problemLeaf,
 } from '@/lib/problems';
 import { systemBaseFor, primerFor } from '@/lib/prompts';
@@ -24,6 +24,7 @@ const { records } = Astro.props as { records: ProblemRecord[] };
 const meta = CORPUS_META[corpus];
 const cols = CORPUS_COLUMNS[corpus];
 const gtAnswers = await loadGtAnswers();
+const rollouts = await loadRollouts();
 const allGrouped = await loadAllProblemsGrouped();
 
 // ── Verification buckets (sidebar glyphs + filter chips) ──
@@ -205,6 +206,7 @@ const firstId = records[0]?.problem.problem_id ?? '';
             <ProblemEntry
               record={r}
               gtAnswers={gtAnswers.get(r.problem.problem_id)}
+              rollouts={rollouts.get(r.problem.problem_id)}
               corpus={corpus}
             />
           ))}

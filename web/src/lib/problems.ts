@@ -336,6 +336,56 @@ export async function loadGtAnswers(): Promise<Map<string, Record<string, GtAnsw
   return out;
 }
 
+// ─── Model rollouts (data/web_rollouts.jsonl) ───────────────────────────────
+// One representative LLM solution per (problem, model, language) — the best slot
+// from the benchmark matrix. Built by eval.export_rollouts --web-out; committed
+// because runs/ is gitignored and the Cloudflare build only sees the repo tree.
+
+export interface Rollout {
+  problem_id: string;
+  model: string;        // short name (sonnet, gpt-oss-120b, ...)
+  language: string;     // webppl | pyro | stan
+  code: string;
+  status: string;       // pass | fail | ill_posed | malformed | exec_error
+  distance: number | null;
+  error: string | null;
+  slot: number;
+  /** The model's computed answer (wire dict), when captured by re-execution —
+   *  feeds the answer overlay. Absent for error/malformed or un-re-executed langs. */
+  answer?: Record<string, unknown>;
+}
+
+/** Model display order (most-capable first), matching the benchmark table. */
+export const ROLLOUT_MODEL_ORDER = [
+  'sonnet', 'haiku', 'qwen3-235b', 'gpt-oss-120b', 'llama-3.3-70b', 'gpt-oss-20b', 'qwen3.5-9b',
+];
+
+let _rolloutCache: Map<string, Rollout[]> | null = null;
+
+export async function loadRollouts(): Promise<Map<string, Rollout[]>> {
+  if (_rolloutCache) return _rolloutCache;
+  let rows: Rollout[] = [];
+  try {
+    rows = await readJsonl<Rollout>(join(DATA_DIR, 'web_rollouts.jsonl'));
+  } catch {
+    rows = []; // rollouts are optional — absent file just hides the model sources
+  }
+  const out = new Map<string, Rollout[]>();
+  for (const r of rows) {
+    if (!out.has(r.problem_id)) out.set(r.problem_id, []);
+    out.get(r.problem_id)!.push(r);
+  }
+  const rank = (m: string) => {
+    const i = ROLLOUT_MODEL_ORDER.indexOf(m);
+    return i === -1 ? ROLLOUT_MODEL_ORDER.length : i;
+  };
+  for (const list of out.values()) {
+    list.sort((x, y) => x.language < y.language ? -1 : x.language > y.language ? 1 : rank(x.model) - rank(y.model));
+  }
+  _rolloutCache = out;
+  return out;
+}
+
 /** Canonical answer wire → the RenderOutput shape the chart renderer expects. */
 export function canonicalToRenderOutput(a: Record<string, unknown> | undefined): unknown {
   if (!a) return null;

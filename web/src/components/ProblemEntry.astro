@@ -3,7 +3,7 @@
 // Two realization columns per corpus (CORPUS_COLUMNS): column A is the
 // ground-truth side (webppl, or posteriordb gold reference draws — stored, no
 // code), column B is the realization cross-checked against A (pyro, or stan).
-import type { ProblemRecord, GtAnswerRow } from '@/lib/problems';
+import type { ProblemRecord, GtAnswerRow, Rollout } from '@/lib/problems';
 import { specChip, problemChapter, problemLeaf, canonicalToRenderOutput, CORPUS_COLUMNS } from '@/lib/problems';
 import type { Corpus } from '@/lib/problems';
 import { statusLabel } from '@/lib/tones';
@@ -13,9 +13,10 @@ import type { RenderOutput } from '@/lib/types';
 interface Props {
   record: ProblemRecord;
   gtAnswers: Record<string, GtAnswerRow> | undefined;
+  rollouts?: Rollout[];
   corpus: string;
 }
-const { record, gtAnswers, corpus } = Astro.props;
+const { record, gtAnswers, rollouts = [], corpus } = Astro.props;
 const { problem, realizationA, realizationB, gateA, gateB, crosscheck } = record;
 const pid = problem.problem_id;
 const cols = CORPUS_COLUMNS[corpus as Corpus];
@@ -111,19 +112,20 @@ function srcBodyHtml(src: SourceData): string {
   return `<div class="out-empty">(no ${escapeHtml(src.short)} realization)</div>`;
 }
 
-function compareColHtml(src: SourceData, side: 'a' | 'b'): string {
-  const tagClass = side === 'a' ? 'tag-a' : 'tag-b';
-  return (
-    `<div class="compare-col">` +
-      `<div class="compare-col-hd">` +
-        `<span class="compare-col-tag ${tagClass}">${escapeHtml(src.short)}</span>` +
-        `<span class="compare-col-label">${escapeHtml(src.label)}</span>` +
-      `</div>` +
-      srcBodyHtml(src) +
-    `</div>`
-  );
+function fmtTV(n: number | null | undefined): string {
+  if (n == null) return '';
+  if (n === 0) return '0.000';
+  if (n < 0.001) return n.toExponential(1);
+  return n.toFixed(3);
 }
-const compareGridHtml = compareColHtml(srcA, 'a') + compareColHtml(srcB, 'b');
+interface Badge { tone: string; glyph: string; label: string }
+function badgeHtmlServer(badge: Badge, tv: number | null): string {
+  const tvBit = tv != null ? `<span class="bucket-tv">${fmtTV(tv)}</span>` : '';
+  return `<span class="bucket bucket-${badge.tone} bucket-sm">` +
+    `<span class="bucket-glyph">${badge.glyph}</span>` +
+    `<span class="bucket-label">${escapeHtml(badge.label)}</span>` + tvBit +
+  `</span>`;
+}
 
 // Answer overlay (section 02). Records → per-parameter small multiples; single
 // distributions → the mirrored overlay; scalar values → side-by-side values.
@@ -179,10 +181,84 @@ const payloadEntry = (src: SourceData) => ({
     ? { bodyHtml: srcBodyHtml(src) }
     : { code: src.code, codeLang: src.codeLang }),
 });
-const sourcePayload = {
-  gt: payloadEntry(srcA),
-  [srcB.key]: payloadEntry(srcB),
+// Status → badge (tone/glyph/label). The badge object travels in each payload
+// entry so browse.js can re-render it on source-switch without a parallel map.
+function statusBadge(status: string, tone: string): Badge {
+  const G: Record<string, string> = { pass: '✓', fail: '✗', malformed: '⚠', ill_posed: '⚠', exec_error: '∅' };
+  const L: Record<string, string> = { pass: 'pass', fail: 'fail', malformed: 'malformed', ill_posed: 'ill-posed', exec_error: 'exec error' };
+  return { tone, glyph: G[status] ?? '·', label: L[status] ?? status };
+}
+function rolloutTone(status: string): string {
+  if (status === 'pass') return 'great';
+  if (status === 'fail') return 'bad';
+  if (status === 'ill_posed' || status === 'malformed') return 'poor';
+  return 'na'; // exec_error
+}
+const gtBadge: Badge = { tone: 'na', glyph: '◆', label: 'ground truth' };
+const realBadge: Badge = { tone: crossTone, glyph: '◆', label: 'realization' };
+
+const sourcePayload: Record<string, unknown> = {
+  gt: { ...payloadEntry(srcA), badge: gtBadge },
+  [srcB.key]: { ...payloadEntry(srcB), badge: realBadge },
 };
+
+// ── Model rollouts as additional compare sources ──
+// Each (model, language) rollout becomes a selectable source: its generated code
+// + a pass/fail badge, comparable against the GT in the same language. Surfaced
+// only in the corpus's solver language (webppl corpora → webppl; posteriordb → stan).
+const LANG_INFO: Record<string, { short: string; codeLang: string }> = {};
+for (const c of [cols.a, cols.b]) if (c.codeLang) LANG_INFO[c.lang] = { short: c.short, codeLang: c.codeLang };
+
+interface OrderedSource { key: string; opt: string }
+const orderedSources: OrderedSource[] = [
+  { key: 'gt', opt: `${cols.a.short} · ground truth` },
+  { key: srcB.key, opt: `${cols.b.short} · realization` },
+];
+for (const r of rollouts) {
+  if (r.language !== cols.solverLang) continue;
+  const info = LANG_INFO[r.language];
+  if (!info) continue;
+  const key = `${r.model}@${r.language}`;
+  sourcePayload[key] = {
+    short: r.model, label: `${r.model} · ${info.short} rollout`,
+    output: r.answer ? canonicalToRenderOutput(r.answer) : null,
+    tv: r.distance, badge: statusBadge(r.status, rolloutTone(r.status)),
+    code: r.code, codeLang: info.codeLang,
+    ...(r.error ? { error: r.error } : {}),
+  };
+  const dBit = r.distance != null ? ` (d=${fmtTV(r.distance)})` : '';
+  orderedSources.push({ key, opt: `${r.model} · ${statusLabel(r.status)}${dBit}` });
+}
+
+// Compare columns: each header is a custom parchment dropdown (NOT a native
+// <select>, which leaks system styling) over ALL sources — left = A, right = B,
+// both pickable from one unified list. browse.js swaps the body + badge on pick;
+// the legacy /c/ pill path is untouched (it has no data-col-body).
+function menuHtml(selectedKey: string): string {
+  return orderedSources.map((o) =>
+    `<button type="button" class="src-menu-item${o.key === selectedKey ? ' src-menu-item-on' : ''}" data-src-opt="${escapeHtml(o.key)}">${escapeHtml(o.opt)}</button>`
+  ).join('');
+}
+function colHtml(side: 'a' | 'b', src: SourceData, selectedKey: string, badge: Badge, tv: number | null): string {
+  const selOpt = orderedSources.find((o) => o.key === selectedKey)?.opt ?? selectedKey;
+  return `<div class="compare-col">` +
+    `<div class="compare-col-hd compare-col-pick">` +
+      `<div class="src-picker" data-src-picker="${side}">` +
+        `<button type="button" class="src-toggle" data-src-toggle aria-expanded="false" aria-label="${side === 'a' ? 'left' : 'right'} compare source">` +
+          `<span class="src-toggle-label" data-src-toggle-label>${escapeHtml(selOpt)}</span>` +
+          `<span class="src-caret">▾</span>` +
+        `</button>` +
+        `<div class="src-menu" data-src-menu hidden>${menuHtml(selectedKey)}</div>` +
+      `</div>` +
+      `<span class="compare-col-badge" data-col-badge="${side}">${badgeHtmlServer(badge, tv)}</span>` +
+    `</div>` +
+    `<div class="compare-col-body" data-col-body="${side}">${srcBodyHtml(src)}</div>` +
+  `</div>`;
+}
+const compareGridHtml =
+  colHtml('a', srcA, 'gt', gtBadge, null) +
+  colHtml('b', srcB, srcB.key, realBadge, crosscheck?.distance ?? null);
+
 const hasPrimer = cols.primer != null;
 ---
 
@@ -217,20 +293,6 @@ const hasPrimer = cols.primer != null;
       </div>
     </div>
 
-    <div class="detail-hd-strip">
-      <span class="detail-hd-strip-lbl">sources</span>
-      <button type="button" class="run-pill run-pill-gt is-source-a" data-source="gt"
-        title={`${cols.a.label}\nclick: set as B (right) · shift-click: set as A (left)`}>
-        <span class="run-pill-glyph">●</span>
-        <span class="run-pill-name">{cols.a.short}</span>
-      </button>
-      <button type="button" class={`run-pill bucket-${crossTone} is-source-b`} data-source={srcB.key}
-        title={`${cols.b.label} — crosscheck vs ${cols.a.short} GT\nclick: set as B (right) · shift-click: set as A (left)`}>
-        <span class="run-pill-glyph">◆</span>
-        <span class="run-pill-name">{cols.b.short}</span>
-        {crosscheck?.distance != null && <span class="run-pill-tv">{fmt(crosscheck.distance)}</span>}
-      </button>
-    </div>
   </div>
 
   <section class="detail-section">
@@ -381,4 +443,36 @@ const hasPrimer = cols.primer != null;
   /* .compare-unavailable / .compare-stored / .rec-* live in global styles.css
      (used in set:html + browse.js). */
   td.reason-cell { font: 12px var(--font-mono); line-height: 1.45; color: var(--fg-dim); white-space: normal; max-width: 56ch; }
+
+  /* Compare-column source pickers: a custom parchment dropdown (NOT native
+     <select>, which leaks system chrome on focus) over all sources, so left and
+     right are picked independently. Mirrors the corpus picker (.coll-menu). */
+  .compare-col-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .src-picker { position: relative; }
+  .src-toggle {
+    display: inline-flex; align-items: center; gap: 8px; max-width: 32ch;
+    font: 11.5px var(--font-mono); color: var(--fg);
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 8px; cursor: pointer;
+  }
+  .src-toggle:hover { border-color: var(--border-strong); }
+  .src-toggle[aria-expanded="true"] { border-color: var(--accent); }
+  .src-toggle-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .src-caret { color: var(--fg-dim); font-size: 9px; margin-left: auto; }
+  .src-menu {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+    min-width: 100%; max-height: 320px; overflow-y: auto;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, .12); padding: 4px;
+  }
+  .src-menu[hidden] { display: none; }
+  .src-menu-item {
+    display: block; width: 100%; text-align: left; white-space: nowrap;
+    font: 11.5px var(--font-mono); color: var(--fg);
+    background: none; border: 0; border-radius: 4px;
+    padding: 5px 8px; cursor: pointer;
+  }
+  .src-menu-item:hover { background: var(--accent-bg); }
+  .src-menu-item-on { background: var(--accent-bg); color: var(--accent); }
+  .compare-col-badge { display: inline-flex; }
 </style>
