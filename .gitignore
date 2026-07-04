@@ -29,3 +29,12 @@ data/.stan_cache/
 
 # benchmark run outputs
 runs/
+
+# self-generated reference draws (eval/reference_gen.py) — regenerable, large
+# (lsat ~120MB, etc.); the canonical answers are frozen in _gt_answers.jsonl + HF
+data/reference_draws/
+
+# session scratch + slide build intermediates
+scratchpad/
+slides/data/
+slides/preview.png

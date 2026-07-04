@@ -333,6 +333,20 @@ posteriordb (`eval/posteriordb.py`, started 2026-06-18). That inverts several st
     plateauing ~1.5× the cap even at 10 chains × 10k warmup; the gold reference floor
     (0.0015) is a within-run chain-block split that understates true cross-run MC variance
     ~140×. Pruned (the 1 of 46). Don't paper over, don't crank sampling forever.
+- **Self-generated reference draws extend the corpus past the gold subset**
+  (`eval/reference_gen.py`, 2026-07-04). posteriordb has 147 posteriors but gold draws
+  for only 46; for the rest we run long NUTS (10 chains × 1000 kept post-thin-10,
+  10k warmup) behind explicit gates — R-hat ≤ 1.01 AND min ESS_bulk ≥ 2000 over the
+  queried params — and store passing draws as an **overlay** (`data/reference_draws/
+  <name>.json` + `.info.json` w/ provenance + per-param diagnostics). The vendored
+  posteriordb tree is never written; `posteriordb.py` resolves gold first, overlay
+  second (`validated_posterior_names()`), so ingestion/executor/crosscheck work
+  unchanged. The gate IS the provenance claim ("validated draws" vs "gold draws") —
+  a posterior that fails is rejected, never stored (eight_schools_centered: funnel
+  geometry, R-hat 1.011, ESS 1020 → rejected; its noncentered twin is gold).
+  **Dedup rule:** one problem per mathematical posterior — centered/noncentered and
+  other reparameterizations share a posterior, so they'd get identical statements;
+  ingest only one (the 12 radon_mn variants ≈ 6 real models).
 
 ---
 

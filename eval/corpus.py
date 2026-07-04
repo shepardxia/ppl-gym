@@ -30,7 +30,20 @@ BATCH_EXECUTORS = {
 
 
 def batch_executor_for(language: str):
-    """Return execute_batch(code, seeds, timeout, workers) -> list for a language."""
+    """Return execute_batch(code, seeds, timeout, workers) -> list for a language.
+
+    Contract (uniform across languages):
+      - Returns a list aligned with ``seeds``; a failed seed is ``None``.
+      - A whole-run failure (nothing executed: compile error, subprocess death,
+        every unit failed) raises RuntimeError carrying the REAL reason —
+        never a generic message.
+      - ``timeout`` is the per-run budget for one seed's execution; executors
+        apply the budget policy in eval.config on top (Pyro seed scale + chunk
+        cap, Stan data/regime scaling).
+      - ``workers`` bounds the executor's concurrent OS processes for this
+        call: WebPPL = process per seed (workers threads spawning them),
+        Pyro = chunk subprocesses, Stan = concurrent fits (workers // chains).
+    """
     try:
         return BATCH_EXECUTORS[language]
     except KeyError:

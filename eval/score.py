@@ -33,7 +33,7 @@ from pathlib import Path
 from threading import Event, Lock
 
 from eval.algebra import AlgebraError, parse_spec, status_of, verdict
-from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
+from eval.config import DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT, total_exec_workers
 from eval.corpus import load_corpus
 from eval.harness import (
     code_jaccard,
@@ -195,8 +195,9 @@ def run_scoring(
     gt_cache_lock = Lock()
 
     # Clamp per-problem workers so total executor subprocesses stay bounded:
-    # workers (problems in flight) × mc_workers = max executor processes.
-    mc_workers = max(1, DEFAULT_MC_WORKERS // max(1, workers))
+    # workers (problems in flight) × mc_workers = max executor processes
+    # (machine budget from eval.config; PPL_GYM_EXEC_WORKERS on a big box).
+    mc_workers = max(1, total_exec_workers() // max(1, workers))
 
     scored_rows: list[dict] = []
     write_lock = Lock()

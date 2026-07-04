@@ -54,3 +54,44 @@ def test_seeding():
 def test_missing_answer_fails():
     r = execute_pyro("x = 1 + 1", random_seed=42)
     assert not r.success and "ANSWER" in r.error_message
+
+
+# ---------------------------------------------------------------------------
+# Budget policy + chunking (contract-level; no subprocess spawned)
+# ---------------------------------------------------------------------------
+
+def test_chunk_budget_policy(monkeypatch):
+    """Each chunk gets per-seed budget x its seed count, capped; chunks cover
+    all seeds in order and results reassemble aligned."""
+    import eval.executor_pyro as ep
+    from eval.config import PYRO_CHUNK_BUDGET_CAP, PYRO_SEED_BUDGET_SCALE
+
+    calls = []
+
+    def fake_chunk(code, seeds, timeout):
+        calls.append((tuple(seeds), timeout))
+        return [f"s{s}" for s in seeds]
+
+    monkeypatch.setattr(ep, "_run_pyro_chunk", fake_chunk)
+
+    # k=5 exact GT with ample workers: one seed per chunk, full scaled budget.
+    out = ep.execute_pyro_batch("x", [1, 2, 3, 4, 5], timeout=60, workers=8)
+    assert out == ["s1", "s2", "s3", "s4", "s5"]
+    assert all(t == 60 * PYRO_SEED_BUDGET_SCALE for _, t in calls)
+    assert [s for seeds, _ in calls for s in seeds] == [1, 2, 3, 4, 5]
+
+    # Many-seed draws chunk: budget capped, never hours.
+    calls.clear()
+    ep.execute_pyro_batch("x", list(range(200)), timeout=60, workers=1)
+    assert len(calls) == 1
+    assert calls[0][1] == PYRO_CHUNK_BUDGET_CAP
+
+
+def test_env_worker_budget(monkeypatch):
+    from eval.config import DEFAULT_MC_WORKERS, total_exec_workers
+    monkeypatch.delenv("PPL_GYM_EXEC_WORKERS", raising=False)
+    assert total_exec_workers() == DEFAULT_MC_WORKERS
+    monkeypatch.setenv("PPL_GYM_EXEC_WORKERS", "48")
+    assert total_exec_workers() == 48
+    monkeypatch.setenv("PPL_GYM_EXEC_WORKERS", "junk")
+    assert total_exec_workers() == DEFAULT_MC_WORKERS

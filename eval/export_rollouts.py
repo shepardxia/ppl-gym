@@ -122,11 +122,14 @@ def _round_sig(x, sig: int = 6):
     return round(x, -int(floor(log10(abs(x)))) + (sig - 1))
 
 
-def trim_answer(a: dict, max_support: int = 256, max_samples: int = 256) -> dict:
-    """Shrink a wire answer for web embedding: round floats to 6 sig figs and cap
-    enumerated support / sample clouds to the highest-mass entries. Display-only —
+def trim_answer(a: dict, max_support: int = 256, max_samples: int = 256,
+                max_fields: int = 40) -> dict:
+    """Shrink a wire answer for web embedding: round floats to 6 sig figs, cap
+    enumerated support / sample clouds to the highest-mass entries, and cap a
+    record's marginals to the first ``max_fields`` parameters. Display-only —
     the full answer stays in scored data and the HF dataset. A 500-point support
-    overlay is unreadable anyway; top-256 captures the visible mass."""
+    overlay is unreadable anyway; a 1000-parameter record (lsat) overlay even
+    less so — the cap keeps the committed web file from ballooning."""
     k = a.get("kind")
     if k == "dist_enum":
         pairs = sorted(zip(a["support"], a["probs"]), key=lambda t: -t[1])[:max_support]
@@ -139,8 +142,10 @@ def trim_answer(a: dict, max_support: int = 256, max_samples: int = 256) -> dict
         return {"kind": "dist_param", "family": a["family"],
                 "params": {kk: _round_sig(vv) for kk, vv in a["params"].items()}}
     if k == "record":
+        items = list(a["fields"].items())[:max_fields]
         return {"kind": "record",
-                "fields": {n: trim_answer(v, max_support, max_samples) for n, v in a["fields"].items()}}
+                "fields": {n: trim_answer(v, max_support, max_samples, max_fields)
+                           for n, v in items}}
     if k == "exact":
         return {"kind": "exact", "value": _round_sig(a["value"])}
     return a

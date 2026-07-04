@@ -36,7 +36,7 @@ from eval.algebra import (
     parse_spec,
     verdict,
 )
-from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
+from eval.config import DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT, total_exec_workers
 from eval.corpus import load_corpus, load_problems, load_unavailable
 from eval.harness import (
     _DEFAULT_K_DRAWS,
@@ -101,7 +101,7 @@ def gate_problem(
     k_exact: int = _DEFAULT_K_EXACT,
     k_draws: int = _DEFAULT_K_DRAWS,
     timeout: int = DEFAULT_TIMEOUT,
-    workers: int = DEFAULT_MC_WORKERS,
+    workers: int | None = None,
     language: str = "webppl",
 ) -> dict:
     """Run the Phase-A gate for one (problem, realization) pair.
@@ -313,7 +313,7 @@ def _judge_problem_b(
     k_exact: int = _DEFAULT_K_EXACT,
     k_draws: int = _DEFAULT_K_DRAWS,
     timeout: int = DEFAULT_TIMEOUT,
-    workers: int = DEFAULT_MC_WORKERS,
+    workers: int | None = None,
     stamp: dict | None = None,
     language: str = "webppl",
 ) -> dict:
@@ -550,7 +550,8 @@ def cmd_judge(args) -> None:
 
     print(f"[judge] judging {len(problems)} problem(s)...")
     parallel = min(4, max(1, len(problems)))
-    per_problem_workers = max(1, args.workers // parallel)
+    budget = args.workers or total_exec_workers()
+    per_problem_workers = max(1, budget // parallel)
 
     def _judge_one(prob: dict) -> dict:
         pid = prob["problem_id"]
@@ -652,7 +653,8 @@ def cmd_answers(args) -> None:
 
     print(f"[answers] {len(problems)} problem(s), language={args.language}")
     parallel = min(4, max(1, len(problems)))
-    per_problem_workers = max(1, args.workers // parallel)
+    budget = args.workers or total_exec_workers()
+    per_problem_workers = max(1, budget // parallel)
 
     def _one(prob: dict) -> dict:
         pid = prob["problem_id"]
@@ -707,7 +709,7 @@ def crosscheck_problem(
     k_exact: int = _DEFAULT_K_EXACT,
     k_draws: int = _DEFAULT_K_DRAWS,
     timeout: int = DEFAULT_TIMEOUT,
-    workers: int = DEFAULT_MC_WORKERS,
+    workers: int | None = None,
     margin: float = 2.0,
 ) -> dict:
     """Judge the reference-language GT against k target-language GT runs.
@@ -794,7 +796,8 @@ def cmd_crosscheck(args) -> None:
     print(f"[crosscheck] {len(pairs)} problem(s): "
           f"{args.language} (target) vs {args.reference} (reference)")
     parallel = min(4, max(1, len(pairs)))
-    per_problem_workers = max(1, args.workers // parallel)
+    budget = args.workers or total_exec_workers()
+    per_problem_workers = max(1, budget // parallel)
 
     def _check_one(pair: tuple) -> dict:
         prob, target_real = pair
@@ -857,8 +860,8 @@ def main() -> None:
             help="Realization language (selects realization file + executor).",
         )
         p.add_argument(
-            "--workers", type=int, default=DEFAULT_MC_WORKERS,
-            help=f"Thread-pool workers for WebPPL execution (default {DEFAULT_MC_WORKERS}).",
+            "--workers", type=int, default=None,
+            help="Executor-process budget (default: eval.config.total_exec_workers()).",
         )
         p.add_argument(
             "--n-draws", type=int, default=DEFAULT_N_MC,
@@ -964,7 +967,7 @@ def main() -> None:
         help=f"Output JSONL path (default {_SOLVER_REPORT}).",
     )
     judge_p.add_argument(
-        "--workers", type=int, default=DEFAULT_MC_WORKERS,
+        "--workers", type=int, default=None,
     )
     judge_p.add_argument(
         "--n-draws", type=int, default=DEFAULT_N_MC,
@@ -1020,12 +1023,13 @@ def main() -> None:
 
     print(
         f"Running Phase-A gate on {len(problems)} problem(s)  "
-        f"[workers={args.workers}, n_draws={args.n_draws}, "
+        f"[workers={args.workers or total_exec_workers()}, n_draws={args.n_draws}, "
         f"k_exact={args.k_exact}, k_draws={args.k_draws}]"
     )
 
     parallel = min(4, max(1, len(problems)))
-    per_problem_workers = max(1, args.workers // parallel)
+    budget = args.workers or total_exec_workers()
+    per_problem_workers = max(1, budget // parallel)
 
     def _gate_one(pair: tuple) -> dict:
         prob, real = pair

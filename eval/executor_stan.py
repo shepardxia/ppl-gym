@@ -68,8 +68,12 @@ def _compiled_model(model_code: str):
 
 
 def _one_fit(model, data: dict, params: list[str], sampling: dict,
-             seed: int, timeout: int):
-    """Return {param: [draws]} for a single seeded fit, or None on failure."""
+             seed: int, timeout: int, errors: list | None = None):
+    """Return {param: [draws]} for a single seeded fit, or None on failure.
+
+    A failure's real reason is appended to ``errors`` (when given) so the
+    batch can surface it instead of the generic "execution failed".
+    """
     try:
         fit = model.sample(
             data=data,
@@ -88,10 +92,16 @@ def _one_fit(model, data: dict, params: list[str], sampling: dict,
         out: dict[str, list] = {}
         for p in params:
             if p not in df.columns:
-                return None  # model does not expose a queried parameter
+                if errors is not None:
+                    errors.append(f"model does not expose queried parameter {p!r}")
+                return None
             out[p] = df[p].astype(float).tolist()
         return out
-    except Exception:
+    except Exception as e:
+        if errors is not None:
+            msg = str(e).strip().splitlines()
+            errors.append(f"stan fit failed (timeout {timeout}s): "
+                          + (msg[-1][:200] if msg else type(e).__name__))
         return None
 
 
@@ -117,21 +127,35 @@ def execute_stan_batch(code: str, seeds, timeout: int, workers: int) -> list:
                            if "error" in ln.lower() or "exception" in ln.lower()), msg[:200])
             raise RuntimeError(f"stan compile failed: {detail[:200]}")
 
-        # Scale the per-fit timeout with the data size: a large-N posterior needs
-        # proportionally more wall-clock than the flat default to converge (a flat
-        # 60s systematically fails big models like diamonds, N=5000). Cap at 10x.
+        # Scale the per-fit timeout with the fit's cost drivers: data size N
+        # (per-iteration cost; a flat 60s systematically fails big models like
+        # diamonds, N=5000) AND the sampling regime (total chain-iterations; a
+        # gold-reproduction GT like low_dim_gauss_mix runs 8x9000 iters — 9x the
+        # 4x2000 default — and N alone leaves it a 60s budget). Cap at 10x.
         n = max((len(v) for v in b.data.values() if isinstance(v, list)), default=1)
-        fit_timeout = min(timeout * max(1, -(-n // 1000)), timeout * 10) if timeout else timeout
+        chain_iters = b.sampling.get("chains", 4) * (
+            b.sampling.get("iter_warmup", 1000) + b.sampling.get("iter_sampling", 1000))
+        regime = max(1, -(-chain_iters // 8000))  # vs the 4x2000 default
+        scale = max(-(-n // 1000), regime)
+        fit_timeout = min(timeout * max(1, scale), timeout * 10) if timeout else timeout
 
         # Seeds are independent fits. cmdstanpy already parallelizes chains within
         # a fit; run a few fits concurrently but keep total processes bounded.
         chains = b.sampling.get("chains", 4)
         fit_workers = max(1, min(len(seeds), max(1, workers // chains)))
+        errors: list = []
 
         def run(seed: int):
-            return _one_fit(model, b.data, b.params, b.sampling, seed, fit_timeout)
+            return _one_fit(model, b.data, b.params, b.sampling, seed, fit_timeout,
+                            errors=errors)
 
         if fit_workers == 1:
-            return [run(s) for s in seeds]
-        with ThreadPoolExecutor(max_workers=fit_workers) as ex:
-            return list(ex.map(run, seeds))
+            results = [run(s) for s in seeds]
+        else:
+            with ThreadPoolExecutor(max_workers=fit_workers) as ex:
+                results = list(ex.map(run, seeds))
+        if all(r is None for r in results) and errors:
+            # Every fit failed: surface the real reason (mirrors the pyro batch
+            # contract) instead of the generic "execution failed" downstream.
+            raise RuntimeError(errors[0])
+        return results

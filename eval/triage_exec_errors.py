@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -44,7 +45,9 @@ def _mech_cat(err: str) -> str:
         return "compile"
     if "not found" in e:
         return "corpus_miss"
-    if e == "execution failed":
+    if e == "execution failed" or re.match(r"^\d+/\d+ seeded runs failed$", e):
+        # Legacy bare form + the current n/k form: both mean the candidate died
+        # without a captured reason — re-execute to recover it.
         return "generic"
     return "other"
 

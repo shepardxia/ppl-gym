@@ -8,6 +8,7 @@ is slow/toolchain-bound and runs only under PPL_GYM_RUN_STAN=1.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 
@@ -120,3 +121,35 @@ def test_stan_executor_reproduces_gold_mean():
     assert out[0] is not None
     for p in ("mu", "tau"):
         assert abs(statistics.mean(out[0][p]) - statistics.mean(ref[p])) < 0.5
+
+
+# ---------------------------------------------------------------------------
+# Self-generated reference overlay (eval/reference_gen.py)
+# ---------------------------------------------------------------------------
+
+def test_overlay_resolution(tmp_path, monkeypatch):
+    """Overlay draws resolve through reference_chains/info for non-gold names;
+    gold names never read the overlay; validated = gold + overlay."""
+    import eval.reference_gen as rg
+    import eval.posteriordb as pdb
+
+    monkeypatch.setattr(rg, "OVERLAY_DIR", tmp_path)
+    name = "fake_data-fake_model"
+    chains = [{"mu": [0.1, 0.2]}, {"mu": [0.3, 0.4]}]
+    (tmp_path / f"{name}.json").write_text(json.dumps(chains))
+    (tmp_path / f"{name}.info.json").write_text(json.dumps(
+        {"provenance": "self-generated", "inference": {"method_arguments": {}}}))
+
+    assert rg.overlay_names() == [name]
+    assert name in pdb.validated_posterior_names()
+    pdb.reference_chains.cache_clear()
+    assert pdb.reference_chains(name) == chains
+    assert pdb.reference_info(name)["provenance"] == "self-generated"
+    pdb.reference_chains.cache_clear()
+
+
+def test_overlay_refuses_gold(monkeypatch):
+    import eval.reference_gen as rg
+    gold = rg.gold_posterior_names()[0]
+    r = rg.generate_reference(gold)
+    assert r["status"] == "error" and "gold" in r["error"]

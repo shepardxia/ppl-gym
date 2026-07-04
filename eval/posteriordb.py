@@ -84,6 +84,16 @@ def gold_posterior_names() -> list[str]:
     return sorted(p.name[: -len(".json.zip")] for p in draws.glob("*.json.zip"))
 
 
+def validated_posterior_names() -> list[str]:
+    """Gold posteriors + self-generated overlay references (eval/reference_gen).
+
+    Overlay draws pass explicit R-hat/ESS gates but are NOT posteriordb gold;
+    their info.json carries the provenance line. Gold always wins on overlap.
+    """
+    from eval.reference_gen import overlay_names
+    return sorted(set(gold_posterior_names()) | set(overlay_names()))
+
+
 @lru_cache(maxsize=None)
 def posterior_info(name: str) -> dict:
     return json.loads((_pdb_root() / "posteriors" / f"{name}.json").read_text())
@@ -126,10 +136,22 @@ def data_block_vars(model: str) -> list[str]:
 
 @lru_cache(maxsize=None)
 def reference_chains(name: str) -> list[dict]:
-    """The gold draws as a list of chains; each chain is {param: [draws]}."""
+    """Reference draws as a list of chains; each chain is {param: [draws]}.
+
+    Gold (posteriordb) first; falls back to the self-generated overlay
+    (data/reference_draws/, eval/reference_gen.py) for validated posteriors."""
     path = (_pdb_root() / "reference_posteriors" / "draws" / "draws"
             / f"{name}.json.zip")
-    chains = _read_zip_json(path)
+    if path.exists():
+        chains = _read_zip_json(path)
+    else:
+        from eval.reference_gen import OVERLAY_DIR
+        overlay = OVERLAY_DIR / f"{name}.json"
+        if not overlay.exists():
+            raise FileNotFoundError(
+                f"no reference draws for {name}: not in posteriordb gold and "
+                f"no overlay at {overlay}")
+        chains = json.loads(overlay.read_text())
     if not isinstance(chains, list):
         raise ValueError(f"unexpected draws shape for {name}: {type(chains)}")
     return chains
@@ -138,7 +160,13 @@ def reference_chains(name: str) -> list[dict]:
 def reference_info(name: str) -> dict:
     path = (_pdb_root() / "reference_posteriors" / "draws" / "info"
             / f"{name}.info.json")
-    return json.loads(path.read_text())
+    if path.exists():
+        return json.loads(path.read_text())
+    from eval.reference_gen import OVERLAY_DIR
+    overlay = OVERLAY_DIR / f"{name}.info.json"
+    if overlay.exists():
+        return json.loads(overlay.read_text())
+    raise FileNotFoundError(f"no reference info for {name}")
 
 
 def param_names(name: str) -> list[str]:
@@ -269,7 +297,7 @@ _SAMPLING_OVERRIDES: dict[str, dict] = {
 
 
 def cmd_build(args) -> None:
-    all_names = gold_posterior_names()
+    all_names = validated_posterior_names()
     # accept either posteriordb posterior names or problem_ids
     by_pid = {problem_id(n): n for n in all_names}
     resolved = [by_pid.get(n, n) for n in (args.ids or all_names)]
@@ -336,7 +364,7 @@ def authoring_material(name: str) -> dict:
 
 
 def cmd_material(args) -> None:
-    all_names = gold_posterior_names()
+    all_names = validated_posterior_names()
     by_pid = {problem_id(n): n for n in all_names}
     names = [by_pid.get(x, x) for x in args.ids] if args.ids else all_names
     mat = [authoring_material(n) for n in names]

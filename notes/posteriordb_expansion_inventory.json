@@ -1,0 +1,608 @@
+[
+ {
+  "name": "wells_data-wells_dist",
+  "model_lines": 13,
+  "max_n": 3020,
+  "note": ""
+ },
+ {
+  "name": "sesame_data-sesame_one_pred_a",
+  "model_lines": 14,
+  "max_n": 240,
+  "note": ""
+ },
+ {
+  "name": "Rate_1_data-Rate_1_model",
+  "model_lines": 17,
+  "max_n": 1,
+  "note": ""
+ },
+ {
+  "name": "nes_logit_data-nes_logit_model",
+  "model_lines": 17,
+  "max_n": 1179,
+  "note": ""
+ },
+ {
+  "name": "eight_schools-eight_schools_centered",
+  "model_lines": 18,
+  "max_n": 8,
+  "note": ""
+ },
+ {
+  "name": "Rate_3_data-Rate_3_model",
+  "model_lines": 19,
+  "max_n": 1,
+  "note": ""
+ },
+ {
+  "name": "wells_data-wells_dist100_model",
+  "model_lines": 19,
+  "max_n": 3020,
+  "note": ""
+ },
+ {
+  "name": "low_dim_gauss_mix_collapse-low_dim_gauss_mix_collapse",
+  "model_lines": 20,
+  "max_n": 1000,
+  "note": ""
+ },
+ {
+  "name": "wells_data-wells_dist100ars_model",
+  "model_lines": 20,
+  "max_n": 3020,
+  "note": ""
+ },
+ {
+  "name": "normal_5-normal_mixture_k",
+  "model_lines": 22,
+  "max_n": 1701,
+  "note": ""
+ },
+ {
+  "name": "wells_data-wells_dae_model",
+  "model_lines": 22,
+  "max_n": 3020,
+  "note": ""
+ },
+ {
+  "name": "wells_data-wells_interaction_model",
+  "model_lines": 22,
+  "max_n": 3020,
+  "note": ""
+ },
+ {
+  "name": "normal_2-normal_mixture",
+  "model_lines": 23,
+  "max_n": 1000,
+  "note": ""
+ },
+ {
+  "name": "wells_data-wells_dae_c_model",
+  "model_lines": 23,
+  "max_n": 3020,
+  "note": ""
+ },
+ {
+  "name": "wells_data-wells_interaction_c_model",
+  "model_lines": 23,
+  "max_n": 3020,
+  "note": ""
+ },
+ {
+  "name": "wells_data-wells_daae_c_model",
+  "model_lines": 24,
+  "max_n": 3020,
+  "note": ""
+ },
+ {
+  "name": "radon_mod-radon_county",
+  "model_lines": 24,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "Rate_2_data-Rate_2_model",
+  "model_lines": 25,
+  "max_n": 1,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_pooled",
+  "model_lines": 26,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_pooled",
+  "model_lines": 26,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "Rate_4_data-Rate_4_model",
+  "model_lines": 27,
+  "max_n": 1,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_county_intercept",
+  "model_lines": 27,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_county_intercept",
+  "model_lines": 27,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "Rate_5_data-Rate_5_model",
+  "model_lines": 28,
+  "max_n": 1,
+  "note": ""
+ },
+ {
+  "name": "wells_data-wells_dae_inter_model",
+  "model_lines": 28,
+  "max_n": 3020,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_partially_pooled_centered",
+  "model_lines": 29,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_partially_pooled_centered",
+  "model_lines": 29,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "surgical_data-surgical_model",
+  "model_lines": 30,
+  "max_n": 12,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_variable_slope_centered",
+  "model_lines": 30,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_variable_slope_centered",
+  "model_lines": 30,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "prideprejudice_chapter-ldaK5",
+  "model_lines": 30,
+  "max_n": 32877,
+  "note": ""
+ },
+ {
+  "name": "prideprejudice_paragraph-ldaK5",
+  "model_lines": 30,
+  "max_n": 32877,
+  "note": ""
+ },
+ {
+  "name": "dugongs_data-dugongs_model",
+  "model_lines": 31,
+  "max_n": 27,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_variable_intercept_centered",
+  "model_lines": 31,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_variable_intercept_centered",
+  "model_lines": 31,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "seeds_data-seeds_stanified_model",
+  "model_lines": 32,
+  "max_n": 21,
+  "note": ""
+ },
+ {
+  "name": "irt_2pl-irt_2pl",
+  "model_lines": 33,
+  "max_n": 20,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_hierarchical_intercept_centered",
+  "model_lines": 33,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_hierarchical_intercept_centered",
+  "model_lines": 33,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "uk_drivers-state_space_stochastic_level_stochastic_seasonal",
+  "model_lines": 34,
+  "max_n": 192,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_partially_pooled_noncentered",
+  "model_lines": 34,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_variable_intercept_slope_centered",
+  "model_lines": 34,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_partially_pooled_noncentered",
+  "model_lines": 34,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_variable_intercept_slope_centered",
+  "model_lines": 34,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "dogs-dogs",
+  "model_lines": 35,
+  "max_n": 30,
+  "note": ""
+ },
+ {
+  "name": "pilots-pilots",
+  "model_lines": 35,
+  "max_n": 40,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_variable_slope_noncentered",
+  "model_lines": 35,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_variable_slope_noncentered",
+  "model_lines": 35,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "seeds_data-seeds_centered_model",
+  "model_lines": 36,
+  "max_n": 21,
+  "note": ""
+ },
+ {
+  "name": "seeds_data-seeds_model",
+  "model_lines": 36,
+  "max_n": 21,
+  "note": ""
+ },
+ {
+  "name": "dogs-dogs_log",
+  "model_lines": 36,
+  "max_n": 30,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_variable_intercept_noncentered",
+  "model_lines": 36,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_variable_intercept_noncentered",
+  "model_lines": 36,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "GLM_Poisson_Data-GLM_Poisson_model",
+  "model_lines": 37,
+  "max_n": 40,
+  "note": ""
+ },
+ {
+  "name": "rats_data-rats_model",
+  "model_lines": 37,
+  "max_n": 150,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_hierarchical_intercept_noncentered",
+  "model_lines": 38,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_hierarchical_intercept_noncentered",
+  "model_lines": 38,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "three_docs1200-ldaK2",
+  "model_lines": 39,
+  "max_n": 1200,
+  "note": ""
+ },
+ {
+  "name": "three_men1-ldaK2",
+  "model_lines": 39,
+  "max_n": 4999,
+  "note": ""
+ },
+ {
+  "name": "three_men2-ldaK2",
+  "model_lines": 39,
+  "max_n": 4999,
+  "note": ""
+ },
+ {
+  "name": "three_men3-ldaK2",
+  "model_lines": 39,
+  "max_n": 4999,
+  "note": ""
+ },
+ {
+  "name": "GLMM_data-GLMM1_model",
+  "model_lines": 40,
+  "max_n": 2072,
+  "note": ""
+ },
+ {
+  "name": "GLM_Binomial_data-GLM_Binomial_model",
+  "model_lines": 41,
+  "max_n": 40,
+  "note": ""
+ },
+ {
+  "name": "radon_mn-radon_variable_intercept_slope_noncentered",
+  "model_lines": 43,
+  "max_n": 919,
+  "note": ""
+ },
+ {
+  "name": "radon_all-radon_variable_intercept_slope_noncentered",
+  "model_lines": 43,
+  "max_n": 12573,
+  "note": ""
+ },
+ {
+  "name": "GLMM_Poisson_data-GLMM_Poisson_model",
+  "model_lines": 46,
+  "max_n": 40,
+  "note": ""
+ },
+ {
+  "name": "mnist_100-nn_rbm1bJ10",
+  "model_lines": 47,
+  "max_n": 100,
+  "note": ""
+ },
+ {
+  "name": "M0_data-M0_model",
+  "model_lines": 47,
+  "max_n": 237,
+  "note": ""
+ },
+ {
+  "name": "sat-hier_2pl",
+  "model_lines": 47,
+  "max_n": 19200,
+  "note": ""
+ },
+ {
+  "name": "mnist-nn_rbm1bJ100",
+  "model_lines": 47,
+  "max_n": 60000,
+  "note": ""
+ },
+ {
+  "name": "ovarian-logistic_regression_rhs",
+  "model_lines": 49,
+  "max_n": 54,
+  "note": ""
+ },
+ {
+  "name": "prostate-logistic_regression_rhs",
+  "model_lines": 49,
+  "max_n": 102,
+  "note": ""
+ },
+ {
+  "name": "Mt_data-Mt_model",
+  "model_lines": 49,
+  "max_n": 237,
+  "note": ""
+ },
+ {
+  "name": "lsat_data-lsat_model",
+  "model_lines": 50,
+  "max_n": 32,
+  "note": ""
+ },
+ {
+  "name": "traffic_accident_nyc-bym2_offset_only",
+  "model_lines": 50,
+  "max_n": 5461,
+  "note": ""
+ },
+ {
+  "name": "election88-election88_full",
+  "model_lines": 51,
+  "max_n": 11566,
+  "note": ""
+ },
+ {
+  "name": "Survey_data-Survey_model",
+  "model_lines": 52,
+  "max_n": 5,
+  "note": ""
+ },
+ {
+  "name": "dogs-dogs_hierarchical",
+  "model_lines": 53,
+  "max_n": 30,
+  "note": ""
+ },
+ {
+  "name": "bones_data-bones_model",
+  "model_lines": 54,
+  "max_n": 34,
+  "note": ""
+ },
+ {
+  "name": "sir-sir",
+  "model_lines": 63,
+  "max_n": 20,
+  "note": ""
+ },
+ {
+  "name": "Mb_data-Mb_model",
+  "model_lines": 65,
+  "max_n": 318,
+  "note": ""
+ },
+ {
+  "name": "dogs-dogs_nonhierarchical",
+  "model_lines": 67,
+  "max_n": 30,
+  "note": ""
+ },
+ {
+  "name": "Mh_data-Mh_model",
+  "model_lines": 69,
+  "max_n": 385,
+  "note": ""
+ },
+ {
+  "name": "fims_Aus_Jpn_irt-2pl_latent_reg_irt",
+  "model_lines": 77,
+  "max_n": 7000,
+  "note": ""
+ },
+ {
+  "name": "Mth_data-Mth_model",
+  "model_lines": 78,
+  "max_n": 387,
+  "note": ""
+ },
+ {
+  "name": "mcycle_splines-accel_splines",
+  "model_lines": 84,
+  "max_n": 133,
+  "note": ""
+ },
+ {
+  "name": "Mtbh_data-Mtbh_model",
+  "model_lines": 87,
+  "max_n": 146,
+  "note": ""
+ },
+ {
+  "name": "synthetic_grid_RBF_kernels-kronecker_gp",
+  "model_lines": 89,
+  "max_n": 30,
+  "note": ""
+ },
+ {
+  "name": "science_irt-grsm_latent_reg_irt",
+  "model_lines": 92,
+  "max_n": 2744,
+  "note": ""
+ },
+ {
+  "name": "timssAusTwn_irt-gpcm_latent_reg_irt",
+  "model_lines": 99,
+  "max_n": 5500,
+  "note": ""
+ },
+ {
+  "name": "butterfly-multi_occupancy",
+  "model_lines": 107,
+  "max_n": 28,
+  "note": ""
+ },
+ {
+  "name": "rstan_downloads-prophet",
+  "model_lines": 107,
+  "max_n": 1169,
+  "note": ""
+ },
+ {
+  "name": "loss_curves-losscurve_sislob",
+  "model_lines": 113,
+  "max_n": 55,
+  "note": ""
+ },
+ {
+  "name": "ecdc0401-covid19imperial_v2",
+  "model_lines": 134,
+  "max_n": 100,
+  "note": ""
+ },
+ {
+  "name": "ecdc0401-covid19imperial_v3",
+  "model_lines": 134,
+  "max_n": 100,
+  "note": ""
+ },
+ {
+  "name": "ecdc0501-covid19imperial_v2",
+  "model_lines": 134,
+  "max_n": 100,
+  "note": ""
+ },
+ {
+  "name": "ecdc0501-covid19imperial_v3",
+  "model_lines": 134,
+  "max_n": 100,
+  "note": ""
+ },
+ {
+  "name": "soil_carbon-soil_incubation",
+  "model_lines": 143,
+  "max_n": 25,
+  "note": ""
+ },
+ {
+  "name": "hmm_gaussian_simulated-hmm_gaussian",
+  "model_lines": 150,
+  "max_n": 500,
+  "note": ""
+ },
+ {
+  "name": "state_wide_presidential_votes-hierarchical_gp",
+  "model_lines": 154,
+  "max_n": 550,
+  "note": ""
+ },
+ {
+  "name": "iohmm_reg_simulated-iohmm_reg",
+  "model_lines": 212,
+  "max_n": 500,
+  "note": ""
+ }
+]

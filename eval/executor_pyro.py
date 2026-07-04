@@ -42,6 +42,23 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _VENV_PY = _PROJECT_ROOT / ".venv" / "bin" / "python"
 
 
+def _subprocess_env(**extra: str) -> dict:
+    """Env for pyro subprocesses: BLAS/OMP capped at 4 threads.
+
+    Torch defaults to one thread per core; our models' tensors are tiny (below
+    the parallelization grain), so the extra threads only spin-wait — measured
+    ~9x degradation with several concurrent subprocesses on a 128-core box, and
+    15-25% slower even solo. Outputs verified bit-identical 64-vs-4 threads
+    across heavy NUTS + exact problems (12/12), so cached GT runs stay valid.
+    """
+    env = {**os.environ,
+           "OMP_NUM_THREADS": "4",
+           "MKL_NUM_THREADS": "4",
+           "OPENBLAS_NUM_THREADS": "4"}
+    env.update(extra)
+    return env
+
+
 # Use ''' delimiter so """ inside user-facing docstrings don't close this string.
 SERIALIZER_HEADER = r'''
 # ── Preamble ─────────────────────────────────────────────────────────────────
@@ -253,9 +270,8 @@ def execute_pyro(code: str, timeout: int = 30, random_seed: int | None = None) -
         tmp_path = f.name
 
     try:
-        env = {**os.environ}
         seed = random_seed if random_seed is not None else 42
-        env["PPL_GYM_PYRO_SEED"] = str(seed)
+        env = _subprocess_env(PPL_GYM_PYRO_SEED=str(seed))
 
         cmd = [str(_VENV_PY), tmp_path]
         try:
@@ -340,17 +356,47 @@ sys.stdout.write(json.dumps(__results))
 
 
 def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1) -> list:
-    """Run ``code`` once per seed in a single subprocess (one torch import).
+    """Run ``code`` once per seed, seeds split into <=``workers`` chunk subprocesses.
 
-    Returns a list aligned with ``seeds``: each entry is the parsed answer for
-    that seed, or ``None`` if that seed failed.  ``workers`` is accepted for
-    interface symmetry with the WebPPL batch executor and ignored (one process).
-    In-process reseed (set_rng_seed + clear_param_store + fresh namespace per
-    iteration) reproduces fresh-process-per-seed output exactly.
+    Returns a list aligned with ``seeds``: the parsed answer per seed, or
+    ``None`` for a failed seed.  ``timeout`` is the per-run budget; the policy
+    in eval.config turns it into a per-chunk bound (seed scale x chunk seed
+    count, capped) — wall-clock = slowest chunk.  Per-seed reseed inside a
+    chunk (set_rng_seed + clear_param_store + fresh namespace) reproduces
+    fresh-process-per-seed output exactly, so chunk boundaries never affect
+    results and cached runs stay valid.
     """
+    from eval.config import PYRO_CHUNK_BUDGET_CAP, PYRO_SEED_BUDGET_SCALE
+
     seeds = list(seeds)
     if not seeds:
         return []
+    n_chunks = min(max(1, workers), len(seeds))
+    size = (len(seeds) + n_chunks - 1) // n_chunks
+    chunks = [seeds[i:i + size] for i in range(0, len(seeds), size)]
+
+    def budget(chunk: list) -> int:
+        return min(timeout * PYRO_SEED_BUDGET_SCALE * len(chunk), PYRO_CHUNK_BUDGET_CAP)
+
+    if len(chunks) == 1:
+        return _run_pyro_chunk(code, chunks[0], budget(chunks[0]))
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
+        futures = [pool.submit(_run_pyro_chunk, code, c, budget(c)) for c in chunks]
+        results, first_err = [], None
+        for fut in futures:
+            try:
+                results.append(fut.result())
+            except RuntimeError as e:
+                first_err = first_err or e
+                results.append(None)
+    if first_err is not None:
+        raise first_err
+    return [a for chunk in results for a in chunk]
+
+
+def _run_pyro_chunk(code: str, seeds: list, timeout: int) -> list:
+    """One subprocess running ``code`` for each seed in ``seeds`` (one torch import)."""
     program = (
         SERIALIZER_HEADER + "\n"
         + "__USER_SRC = " + repr(code) + "\n"
@@ -365,9 +411,10 @@ def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1) ->
             proc = subprocess.run(
                 [str(_VENV_PY), tmp_path],
                 capture_output=True, text=True, timeout=timeout,
+                env=_subprocess_env(),
             )
         except subprocess.TimeoutExpired:
-            # Whole-batch failures (the subprocess died) propagate their reason as
+            # Whole-chunk failures (the subprocess died) propagate their reason as
             # a RuntimeError -> caught downstream as exec_error WITH the cause, not
             # the generic "execution failed". Per-seed model errors below stay None.
             raise RuntimeError(f"timeout after {timeout}s")

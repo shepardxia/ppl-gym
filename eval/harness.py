@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from eval.algebra import Spec, _has_draws_field, canonicalize
-from eval.config import DEFAULT_MC_WORKERS, DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT
+from eval.config import DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT, total_exec_workers
 from eval.gt_cache import cached_run
 
 # Defaults match SCHEMA.md: k=5 for non-draws, k=3 for draws blocks.
@@ -58,7 +58,7 @@ def collect_gt_answers(
     k_exact: int = _DEFAULT_K_EXACT,
     k_draws: int = _DEFAULT_K_DRAWS,
     timeout: int = DEFAULT_TIMEOUT,
-    workers: int = DEFAULT_MC_WORKERS,
+    workers: int | None = None,
     use_cache: bool = True,
 ) -> tuple[list, int]:
     """Collect k independent canonical GT answers for (code, spec).
@@ -77,6 +77,8 @@ def collect_gt_answers(
     AlgebraError (canonicalization) and RuntimeError propagate; gate_problem()
     catches both.
     """
+    if workers is None:
+        workers = total_exec_workers()
     if _has_draws_field(spec):
         total = k_draws * n_draws
         seeds = [base_seed + i for i in range(total)]
@@ -94,19 +96,14 @@ def collect_gt_answers(
         return canonical, n_runs
 
     seeds = [base_seed + i for i in range(k_exact)]
-    # `timeout` is the per-seed budget. Pyro runs all k_exact seeds in ONE
-    # subprocess, so its single timeout must cover every seed (× len(seeds));
-    # WebPPL and Stan spawn one process per seed, each already bounded by
-    # `timeout`, so they must NOT be multiplied. Measured: right-sized MCMC
-    # realizations (NUTS within the authoring ranges) take 15-55s for a single
-    # seed on the heavier hierarchical / sequence models — independent of sample
-    # count, which is per-leapfrog cost — so k of them cannot share one budget.
-    # Draws blocks above keep the flat budget (many fast forward-samples).
-    batch_timeout = timeout * len(seeds) if language == "pyro" else timeout
-    raw = cached_run(language, code, seeds, timeout=batch_timeout,
+    # `timeout` = per-run budget; each executor applies the budget policy
+    # documented in eval.config (Pyro seed scaling + chunk cap, Stan data/regime
+    # scaling, WebPPL per-process as-is).
+    raw = cached_run(language, code, seeds, timeout=timeout,
                      workers=workers, use_cache=use_cache)
-    if any(a is None for a in raw):
-        raise RuntimeError("execution failed")
+    n_bad = sum(a is None for a in raw)
+    if n_bad:
+        raise RuntimeError(f"{n_bad}/{len(raw)} seeded runs failed")
     return [canonicalize(a, spec) for a in raw], k_exact
 
 
@@ -117,7 +114,7 @@ def execute_candidate_answer(
     base_seed: int = DEFAULT_SEED,
     n_draws: int = DEFAULT_N_MC,
     timeout: int = DEFAULT_TIMEOUT,
-    workers: int = DEFAULT_MC_WORKERS,
+    workers: int | None = None,
     language: str = "webppl",
     gt_bundle: str | None = None,
 ) -> object:
