@@ -35,6 +35,7 @@ from threading import Event, Lock
 from eval.algebra import AlgebraError, parse_spec, status_of, verdict
 from eval.config import DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT, total_exec_workers
 from eval.corpus import load_corpus
+from eval.error_tags import classify
 from eval.harness import (
     code_jaccard,
     collect_gt_answers,
@@ -71,6 +72,7 @@ def _score_one(
             "metric": None,
             "ill_posed": False,
             "error": msg,
+            "error_tag": classify(msg, language),
             "code_jaccard": code_jaccard(code, realization.get("code", "")),
             "runtime_sec": round(time.time() - t0, 3),
         }
@@ -218,6 +220,7 @@ def run_scoring(
                 "metric": None,
                 "ill_posed": False,
                 "error": f"problem/realization not found for problem_id={pid!r}",
+                "error_tag": "corpus_miss",
                 "code_jaccard": 0.0,
                 "runtime_sec": 0.0,
             }

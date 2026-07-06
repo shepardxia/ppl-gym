@@ -59,7 +59,17 @@
 {"problem_id": "posteriordb-nes2000/nes", "language": "reference", "code": "nes2000-nes"}
 {"problem_id": "posteriordb-nes_logit_data/nes_logit_model", "language": "reference", "code": "nes_logit_data-nes_logit_model"}
 {"problem_id": "posteriordb-one_comp_mm_elim_abs/one_comp_mm_elim_abs", "language": "reference", "code": "one_comp_mm_elim_abs-one_comp_mm_elim_abs"}
+{"problem_id": "posteriordb-radon_mn/radon_county_intercept", "language": "reference", "code": "radon_mn-radon_county_intercept"}
+{"problem_id": "posteriordb-radon_mn/radon_hierarchical_intercept_noncentered", "language": "reference", "code": "radon_mn-radon_hierarchical_intercept_noncentered"}
+{"problem_id": "posteriordb-radon_mn/radon_partially_pooled_noncentered", "language": "reference", "code": "radon_mn-radon_partially_pooled_noncentered"}
 {"problem_id": "posteriordb-radon_mn/radon_pooled", "language": "reference", "code": "radon_mn-radon_pooled"}
+{"problem_id": "posteriordb-radon_mn/radon_variable_intercept_noncentered", "language": "reference", "code": "radon_mn-radon_variable_intercept_noncentered"}
+{"problem_id": "posteriordb-radon_mn/radon_variable_intercept_slope_noncentered", "language": "reference", "code": "radon_mn-radon_variable_intercept_slope_noncentered"}
+{"problem_id": "posteriordb-radon_mn/radon_variable_slope_noncentered", "language": "reference", "code": "radon_mn-radon_variable_slope_noncentered"}
+{"problem_id": "posteriordb-rats_data/rats_model", "language": "reference", "code": "rats_data-rats_model"}
 {"problem_id": "posteriordb-sblrc/blr", "language": "reference", "code": "sblrc-blr"}
 {"problem_id": "posteriordb-sblri/blr", "language": "reference", "code": "sblri-blr"}
+{"problem_id": "posteriordb-seeds_data/seeds_model", "language": "reference", "code": "seeds_data-seeds_model"}
+{"problem_id": "posteriordb-seeds_data/seeds_stanified_model", "language": "reference", "code": "seeds_data-seeds_stanified_model"}
+{"problem_id": "posteriordb-sesame_data/sesame_one_pred_a", "language": "reference", "code": "sesame_data-sesame_one_pred_a"}
 {"problem_id": "posteriordb-surgical_data/surgical_model", "language": "reference", "code": "surgical_data-surgical_model"}

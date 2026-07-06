@@ -70,13 +70,14 @@ def test_chunk_budget_policy(monkeypatch):
 
     def fake_chunk(code, seeds, timeout):
         calls.append((tuple(seeds), timeout))
-        return [f"s{s}" for s in seeds]
+        return [f"s{s}" for s in seeds], [None] * len(seeds)
 
     monkeypatch.setattr(ep, "_run_pyro_chunk", fake_chunk)
 
     # k=5 exact GT with ample workers: one seed per chunk, full scaled budget.
-    out = ep.execute_pyro_batch("x", [1, 2, 3, 4, 5], timeout=60, workers=8)
+    out, errs = ep.execute_pyro_batch("x", [1, 2, 3, 4, 5], timeout=60, workers=8)
     assert out == ["s1", "s2", "s3", "s4", "s5"]
+    assert errs == [None] * 5
     assert all(t == 60 * PYRO_SEED_BUDGET_SCALE for _, t in calls)
     assert [s for seeds, _ in calls for s in seeds] == [1, 2, 3, 4, 5]
 

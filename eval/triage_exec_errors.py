@@ -1,18 +1,16 @@
-"""Recover the real cause behind exec_error rows in a benchmark matrix.
+"""Backfill the real cause behind LEGACY exec_error rows in a benchmark matrix.
 
-The scoring harness collapses an executor failure to ``None`` and then to the
-generic ``RuntimeError("execution failed")`` (eval/harness.py), discarding the
-``ExecutionResult.error_message`` / ``.stderr`` the executor actually captured.
-For triage we re-execute the *generic* exec_error candidates through the executor
-directly and surface the real error, so a downstream classifier can split the
-exec_error bucket into harness-artifact vs genuine-model-failure.
+Fresh runs now carry the real reason + ``error_tag`` at scoring time (the
+executors surface each failed seed's ``error_message`` and eval.error_tags
+classifies it). This tool exists for matrices scored BEFORE that change, whose
+exec_error rows still hold the collapsed placeholder ("execution failed" /
+"n/k seeded runs failed") with the real reason lost. It re-executes those
+candidates to recover the cause, then classifies with the SAME eval.error_tags
+``classify`` — so a re-executed legacy row and a fresh scored row land in the
+same bucket and carry the same ``error`` + ``error_tag`` fields.
 
-Mechanical categories (no re-execution needed):
-  timeout     — error already says "timeout"
-  compile     — Stan candidate failed to compile (already surfaced)
-  gt_side     — GT collection failed (our ground truth could not run -> harness)
-  empty_code  — model emitted nothing
-  generic     — bare "execution failed"; re-executed to recover real_error
+Rows that already carry a real reason (non-collapsed) are classified in place,
+no re-execution.
 
 CLI:
   PYTHONPATH=. .venv/bin/python -m eval.triage_exec_errors \\
@@ -26,30 +24,11 @@ from __future__ import annotations
 import argparse
 import glob
 import json
-import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from eval.config import DEFAULT_SEED
-
-
-def _mech_cat(err: str) -> str:
-    e = (err or "").lower()
-    if "timeout" in e:
-        return "timeout"
-    if "gt collection failed" in e:
-        return "gt_side"
-    if "empty code" in e:
-        return "empty_code"
-    if "compile" in e:
-        return "compile"
-    if "not found" in e:
-        return "corpus_miss"
-    if e == "execution failed" or re.match(r"^\d+/\d+ seeded runs failed$", e):
-        # Legacy bare form + the current n/k form: both mean the candidate died
-        # without a captured reason — re-execute to recover it.
-        return "generic"
-    return "other"
+from eval.error_tags import classify, is_collapsed
 
 
 def _reexec(language: str, code: str, gt_bundle: str | None, timeout: int) -> tuple[str, str]:
@@ -100,7 +79,7 @@ def _reexec(language: str, code: str, gt_bundle: str | None, timeout: int) -> tu
 
 
 def run(dirs_glob: str, out_path: Path, *, per_cell: int, timeout: int, workers: int,
-        reexec_langs: set[str]) -> None:
+        reexec_langs: set[str], apply: bool = False) -> None:
     # Anchor the output path before any Stan execution: cmdstanpy leaks process
     # CWD, so a relative write after a Stan re-run lands in the wrong directory.
     out_path = out_path.resolve()
@@ -114,46 +93,50 @@ def run(dirs_glob: str, out_path: Path, *, per_cell: int, timeout: int, workers:
         from eval.corpus import load_realizations
         stan_gt = {r["problem_id"]: r.get("code", "") for r in load_realizations("stan")}
 
-    jobs: list[dict] = []          # generic rows needing re-execution
-    rows: list[dict] = []          # all exec_error rows (mechanical cats filled)
+    jobs: list[dict] = []          # collapsed rows needing re-execution
+    rows: list[dict] = []          # all exec_error rows (error_tag filled)
     for f in scored_files:
         cell = Path(f).parent.name
         model, _, language = cell.partition("__")
-        generic_seen = 0
+        collapsed_seen = 0
         for line in open(f):
             r = json.loads(line)
             if r.get("status") != "exec_error":
                 continue
-            cat = _mech_cat(r.get("error"))
+            orig = r.get("error")
             base = {
                 "model": model, "language": language, "cell": cell,
                 "problem_id": r.get("problem_id"), "slot": r.get("slot"),
-                "orig_error": r.get("error"), "mech_cat": cat,
+                "orig_error": orig, "error": orig,
+                "error_tag": classify(orig, language),
                 "code_len": len(r.get("code", "")),
             }
-            if cat == "generic" and language in reexec_langs:
-                generic_seen += 1
-                if generic_seen <= per_cell:
+            if is_collapsed(orig) and language in reexec_langs:
+                collapsed_seen += 1
+                if collapsed_seen <= per_cell:
                     jobs.append({**base, "_code": r.get("code", ""),
                                  "_gt": stan_gt.get(r.get("problem_id"), "")})
                 else:
                     base["sampled"] = False
                     rows.append(base)
             else:
-                # not re-executed (non-generic, or a language excluded from
-                # re-exec); keep the candidate code so a classifier can read it.
-                if cat == "generic":
+                # not re-executed (already has a real reason, or a language
+                # excluded from re-exec); keep candidate code if still collapsed.
+                if is_collapsed(orig):
                     base["code"] = r.get("code", "")[:6000]
                 rows.append(base)
 
-    print(f"[triage] {len(rows)} non-generic exec_error rows; "
-          f"re-executing {len(jobs)} sampled generic rows "
+    print(f"[triage] {len(rows)} rows tagged in place; "
+          f"re-executing {len(jobs)} sampled collapsed rows "
           f"(per_cell={per_cell})...", flush=True)
 
     def work(j: dict) -> dict:
         real, stderr = _reexec(j["language"], j["_code"], j.get("_gt"), timeout)
         out = {k: v for k, v in j.items() if not k.startswith("_")}
+        # Recovered reason replaces the collapsed placeholder; classify with the
+        # SAME function score.py uses -> identical `error` + `error_tag` schema.
         out.update(sampled=True, real_error=real, stderr_head=stderr,
+                   error=real, error_tag=classify(real, j["language"]),
                    code=j["_code"][:6000])
         return out
 
@@ -171,6 +154,39 @@ def run(dirs_glob: str, out_path: Path, *, per_cell: int, timeout: int, workers:
             fh.write(json.dumps(r) + "\n")
     print(f"[triage] wrote {len(rows)} rows -> {out_path}", flush=True)
 
+    if apply:
+        apply_to_scored(scored_files, rows)
+
+
+def apply_to_scored(scored_files: list[str], rows: list[dict]) -> None:
+    """Write recovered ``error`` + ``error_tag`` back onto the matrix's exec_error
+    rows in place — so legacy scored data matches what fresh runs now produce and
+    export_rollouts (HF + web) carries the real failure class. Keyed by
+    (cell, problem_id, slot); non-exec_error rows and summaries are untouched.
+    """
+    recovered = {(r["cell"], r.get("problem_id"), r.get("slot")):
+                 (r.get("error"), r.get("error_tag")) for r in rows}
+    n_rows = n_files = 0
+    for f in scored_files:
+        cell = Path(f).parent.name
+        srows = [json.loads(ln) for ln in open(f) if ln.strip()]
+        changed = False
+        for sr in srows:
+            if sr.get("summary") or sr.get("status") != "exec_error":
+                continue
+            hit = recovered.get((cell, sr.get("problem_id"), sr.get("slot")))
+            if hit is not None:
+                sr["error"], sr["error_tag"] = hit
+                changed = True
+                n_rows += 1
+        if changed:
+            with open(f, "w") as fh:
+                for sr in srows:
+                    fh.write(json.dumps(sr) + "\n")
+            n_files += 1
+    print(f"[triage] applied error_tag to {n_rows} exec_error rows "
+          f"across {n_files} files", flush=True)
+
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Recover real cause of exec_error rows.")
@@ -185,9 +201,12 @@ def main() -> None:
     p.add_argument("--reexec-langs", default="webppl,pyro",
                    help="languages to re-execute (default skips stan: cmdstan "
                         "compile/NUTS is heavy and stan's generic bucket is tiny).")
+    p.add_argument("--apply", action="store_true",
+                   help="write recovered error + error_tag back onto the matrix's "
+                        "scored.jsonl exec_error rows (legacy backfill).")
     a = p.parse_args()
     run(a.dirs, Path(a.out), per_cell=a.per_cell, timeout=a.timeout, workers=a.workers,
-        reexec_langs=set(x for x in a.reexec_langs.split(",") if x))
+        reexec_langs=set(x for x in a.reexec_langs.split(",") if x), apply=a.apply)
 
 
 if __name__ == "__main__":

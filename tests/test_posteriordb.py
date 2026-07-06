@@ -116,9 +116,9 @@ def test_stan_executor_reproduces_gold_mean():
     from eval.executor_stan import execute_stan_batch
     from eval.posteriordb import reference_blocks, stan_realization
     name = "eight_schools-eight_schools_noncentered"
-    out = execute_stan_batch(stan_realization(name)["code"], [42], timeout=120, workers=4)
+    out, errs = execute_stan_batch(stan_realization(name)["code"], [42], timeout=120, workers=4)
     ref = reference_blocks(name, 1)[0]
-    assert out[0] is not None
+    assert out[0] is not None and errs[0] is None
     for p in ("mu", "tau"):
         assert abs(statistics.mean(out[0][p]) - statistics.mean(ref[p])) < 0.5
 

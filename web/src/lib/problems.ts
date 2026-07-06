@@ -349,6 +349,7 @@ export interface Rollout {
   status: string;       // pass | fail | ill_posed | malformed | exec_error
   distance: number | null;
   error: string | null;
+  error_tag?: string | null;  // coarse failure class (eval.error_tags): runtime|compile|timeout|...
   slot: number;
   /** The model's computed answer (wire dict), when captured by re-execution —
    *  feeds the answer overlay. Absent for error/malformed or un-re-executed langs. */

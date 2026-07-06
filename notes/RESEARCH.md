@@ -272,3 +272,127 @@ where a second column exists). No gate shortcuts at scale — the gate IS the pr
 - Expansion inventory: posteriordb source has 147 posteriors / 46 with gold draws (45 in);
   problang vendored but 0 mined (32 chapters); forestdb 29 in of ~200+ upstream; corpus
   today = 160 problems (70 probmods2 + 16 dippl + 29 forestdb + 45 posteriordb).
+
+### 2026-07-06
+- **Error-tag infra built (instrument, Phase 0.5-adjacent).** The scorer collapsed every
+  executor failure to a generic string (`execution failed` / `n/k seeded runs failed`),
+  losing the real reason; triage recovered it post-hoc by re-executing a 30/cell SAMPLE.
+  Built the proper version: (1) new `eval/error_tags.py` = single `classify(error, language)`
+  → stable tag vocab (timeout/compile/no_output/runtime/gt_side/empty_code/corpus_miss/other)
+  + `is_collapsed` + `join_reasons`; (2) all four batch executors (webppl/pyro/stan/reference)
+  now return `(answers, errors)` aligned per seed — the real per-seed reason survives instead
+  of collapsing to None (on-disk GT cache format unchanged, answers-only); (3) harness raises
+  the real reason; (4) `score.py` stamps `error`+`error_tag` on every exec_error/malformed row
+  at scoring time → future runs need no re-exec; (5) `triage_exec_errors.py` refactored to a
+  LEGACY backfill using the SAME classify → identical `error`+`error_tag` schema. 97 tests
+  pass (5 new); live-verified (pyro NameError / webppl ReferenceError surface real reason,
+  tag `runtime`; full score row carries both); triage over the matrix emits converged schema
+  (2233 legacy-collapsed→`other`=needs-reexec, 330 stan `compile`, etc.). NOT committed.
+  Follow-ons open: recover legacy matrix rows (box re-exec), plumb error_tag into
+  export_rollouts/web/HF, refresh CLAUDE.md triage paragraph (now stale).
+- **Phase 1 continued — posteriordb remainder batch launched.** Box recycled (fresh
+  84.50.156.123:17736, 128 cores, /workspace wiped); re-provisioned (rsync repo, clone
+  posteriordb source, cmdstanpy + cmdstan 2.39). Feasible candidate set after dedup
+  (centered/noncentered twins→one posterior) + known-reject drop (mixtures, GLMM R-hat,
+  eight_schools dup, ovarian/rbm): **14 = 11 clean + 3 risky**. Clean: sesame_one_pred_a,
+  pilots, rats_model, seeds_model, seeds_stanified, radon ×6 (county_intercept +
+  partially_pooled/variable_slope/variable_intercept/variable_intercept_slope/
+  hierarchical_intercept, all noncentered). Risky (gate judges): prostate reg-horseshoe,
+  ldaK2 (LDA label-switch), uk_drivers state-space. All 14 resolve in source, all non-gold.
+  refgen launched as 5 parallel workers (~50 chains on 128 cores; risky/slow ones isolated
+  in w4/w5). Next: ingest passers → author+verify statements → crosscheck stan-vs-reference.
+- **refgen results: 10 clean / 4 gate-rejected** (all 4 = the flagged risky/geometry set):
+  pilots R-hat 1.033; ldaK2 R-hat 2.63 (LDA label-switch); prostate 10/10 timeout (reg
+  horseshoe); uk_drivers 8/10 timeout (state-space). 10 passers R-hat≈1.001, ESS 8-9k.
+  Ingested → corpus 65→**75**.
+- **Curation (correctness bug caught): non-centered `_raw` in the answer_spec.** The 5
+  non-centered radon overlays exposed `alpha_raw`/`beta_raw` (standardized residuals) as
+  queried fields — a candidate writing a mathematically-equivalent CENTERED model has no
+  `_raw` column and would wrongly exec_error. Filtered `*_raw` from each overlay (e.g.
+  variable_intercept_slope 345→175 cols), rebuilt → answer_spec now queries the
+  parameterization-invariant `alpha`/`beta`/`mu_*`/`sigma_*` only. Confirmed convention vs
+  the already-gold eight_schools_noncentered (queries `theta`, not the auxiliary). Rule
+  written into DATASET_GENERATION.md §3.
+- Authored + verified 10 statements (priors + data line-by-line vs each Stan model; seeds_stanified
+  had a wrong source title, wrote from the model). Applied. crosscheck2 (curated, lean) + gate
+  answers running on box. Then pull → coherence pytest.
+- **error-tag → web/HF wired + backfilled.** export_rollouts now carries `error`+`error_tag`
+  (HF had neither before) with a `classify()` fallback for legacy rows; web browser shows
+  `[tag]` on rollout labels + `execution error · <tag>` in the body. Ran the FULL re-exec to
+  recover real reasons (first attempt on the BOX was invalid — box lacks node/webppl bundle +
+  wrong pyro venv path → all FileNotFoundError harness-artifacts; re-ran on the LAPTOP where
+  executors work → 0 artifacts). Real failure classes: webppl dominated by `cpsInnerStatement`
+  (564/1314=43%) + distribution-param errors; pyro by wrong-API (unexpected-kwarg 132,
+  AttributeError 124) + tensor misuse. Added triage `--apply` (reusable backfill): wrote
+  recovered error+error_tag onto all 2712 matrix exec_error rows; merged onto web_rollouts
+  (443 tagged from matrix + 39 new20 via classify). HF upload + push STILL staged for user.
+- **Formal generation doc**: `data/DATASET_GENERATION.md` — the 3 routes (translate-reference /
+  gold-native / self-generated-validated-draws), statement authoring, curation rules (`_raw`
+  + degenerate columns), the gate + coherence pytest, retirement, publication, worked example
+  (65→75). The user's "don't let this be a procedure-less blackbox."
+- **Big-directive exploration (3 parallel subagents):**
+  - **Gen (new lang)**: feasibility GO scoped to the discrete textbook family — `enumerative_inference`
+    (v0.4.8) gives exact discrete posteriors; NO NUTS so weak for posteriordb continuous. Julia
+    1.10.5 + Gen 0.4.8 installed on box. **Route validated end-to-end**: hand-wrote the coin
+    problem (conditioning/ex1.c) in Gen, `enumerative_inference` → mapping-dict JSON →
+    BIT-IDENTICAL to the webppl GT (biased 0.85363, fair 0.14637). Startup 9.7s (Julia JIT →
+    needs batch-subprocess amortization like pyro). Next: build eval/executor_gen.py + serializer.
+  - **webppl/pyro expansion inventory** (UPPER-BOUND estimates, pre-dedup/quality — NOT verified
+    counts; user flagged this explicitly): forestdb remainder ≤35-45 of 54 un-ingested webppl
+    files; problang ≤20-28 of 13 chapters; dippl ≤10-15 of 8 files. Real yield is lower after
+    collapsing near-dup clusters (irony ×12, generics ×8, comparison-class ×3; problang-vs-
+    forestdb overlap) + dropping stubs (liquid_physics = not probabilistic) + passing the gate.
+    Church-tagged forestdb (113) = Scheme→webppl port (higher cost). Pyro-native lane
+    (RSA-implicature, pyro/numpyro examples) = future source-native. Any mining lane must run an
+    explicit DEDUP + QUALITY pass before a count is trusted.
+    **DEDUP DONE (real counts, not ranges): 37 genuinely-new distinct webppl problems** —
+    forestdb 24 (of 61 candidates), problang 11 (of 13 usable chapters), dippl 2 (of 9). The
+    65-88 estimate was inflated ~2x by dup clusters: politeness (~12 candidates → 2 kept),
+    irony/generics/comparison-class already 2-6x ingested, a 3-way "elephants Africa/Asia" dup,
+    plus stubs (liquid_physics = graphics demo, example.md, broken "in prep" files). tug-of-war +
+    a linear-regression problem confirmed genuinely new (probmods2 was mined from exercises/, not
+    chapters/ where these live). Lane deferred (Gen focus) but the real number is 37, not 65-88.
+  - **cross-translation audit (done)**: posteriordb→Pyro 55/65 FEASIBLE, 10 HARD, **0 UNAVAILABLE**
+    (best ROI — source already deduped/curated/statement-frozen, pure realization authoring off a
+    validated Stan program; 10 HARD = 3 idioms: discrete-marg ×7, ODE ×2, GP ×1). textbook→Stan
+    78/115 FEASIBLE, 32 HARD (27 = forestdb RSA nested-log_sum_exp), 5 UNAVAILABLE. posteriordb→
+    WebPPL 42/65 FEASIBLE, 13 HARD, 10 UNAVAILABLE (HMC weak on hierarchical). Order:
+    **Pyro(posteriordb) → Stan(textbook) → WebPPL(posteriordb)**. Pyro-posteriordb = lowest dedup
+    risk (deduped source), do first.
+- **Stan 75 CLOSED (local).** crosscheck2 (curated, lean) 10/10 pass (radon d=.009-.03/tol=.04-.11,
+  sesame d=.0018/tol=.0054, seeds wide but pass); 10 reference GT answers written (350 total).
+  Pulled corpus to laptop; **coherence pytest passes** (11) — statements complete, no leak, every
+  problem has stan+reference. posteriordb 65→75. NOT pushed (user: don't push, would lock me while away).
+- **User pivot: no commit/push; redistribute focus onto Gen** (webppl needs heavy dedup, stan
+  cross-translation is 32-HARD messy; Gen is clean — discrete textbook problems already curated).
+- **Gen language BUILT + validated.** New `eval/executor_gen.py` (Julia subprocess, exact/enumerative,
+  batch runs ONCE + replicates → deterministic, amortizes ~9s Julia JIT; `(answers,errors)` contract;
+  serializer emits {__kind:distribution,support,probs} + `__pplgym_enum_dist` helper). Registered in
+  corpus + EXECUTOR_VERSION["gen"]="gen1". Julia 1.10.5 + Gen 0.4.8 on box. **Pilot 5/5 pass** vs stored
+  webppl GT (d~1e-17, exact): coin (string dist), rain/sprinkler + Monty (record of bool dists),
+  sneeze/fever (dist over record-labels), cough (intervention/conditioning + noisy-OR). Idioms:
+  enumerative_inference + choice_vol_grid over every unobserved latent; hard-condition = observed
+  deterministic bernoulli channel; do() = forced arg + omit address. Documented in REALIZATIONS.md §7b
+  + tests/test_executor_gen.py (opt-in PPL_GYM_RUN_GEN). Validation route: vs stored webppl GT (box has
+  Julia not webppl; exact answers → faithful).
+- **Gen availability boundary**: Gen has NO factor primitive → soft-factor problems (agents-as-programs
+  utility-weighted, unnormalized potentials) = Gen-UNAVAILABLE; nested-inference (RSA, nested
+  social-cognition) + continuous-latent (grid/approx) = deferred. Gen V1 scope = discrete
+  conditioning/enumeration.
+- **Gen scale-up DONE: 26 validated realizations** (5 pilot + 9 batchA + ex4.b + 11 batchB). 2
+  subagents authored the easy discrete set; I validated every one on the box (Julia exec + agreement
+  vs stored webppl GT). 19/21 passed exact (~1e-17); Monty ex2.2 needed per-combo renormalized
+  sampling (not flat+hard-condition → the subagent got it right). The 2 "fails" (gen-models ex5.b,
+  ex7.b) were a MEASUREMENT artifact, not Gen bugs: their webppl GT uses `Infer(method:'forward',
+  samples:10000)` = a Monte-Carlo estimate, and my quick harness compared exact-Gen to that single
+  frozen noisy sample with tol≈0. Gen gives the EXACT analytic truth (ex5.b 0.4/0.6; ex7.b
+  .14/.06/.4/.4) — more accurate than the GT; the real gate (measured floor ~0.005-0.01 for 10k
+  samples) passes them. Added both. Lesson: for forward-sampled webppl GTs, quick agreement-vs-frozen-
+  GT understates tolerance — trust the analytic value / measured floor.
+  Deferred clean-but-hard: conditioning/ex4.c (2^20 grid), observing-sequences/ex3.b (MCMC/unclear
+  coupling), occams/ex1.2 (heavy hypothesis-space port). Not-in-V1: agents soft-factor (unavailable),
+  RSA/nested (defer). Feasible-remaining discrete ≈ a handful; continuous-latent (8) need grid.
+- **error-tag → web/HF wired + backfilled** (from earlier this session): export carries error+error_tag,
+  browser shows [tag], web_rollouts backfilled (all 2712 matrix exec_errors tagged; real classes
+  recovered on LAPTOP — the box re-exec was invalid, lacked node/webppl + wrong venv path). triage
+  `--apply` added. `data/DATASET_GENERATION.md` written (3-route formal procedure). NOT pushed.

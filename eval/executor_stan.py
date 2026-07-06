@@ -68,11 +68,12 @@ def _compiled_model(model_code: str):
 
 
 def _one_fit(model, data: dict, params: list[str], sampling: dict,
-             seed: int, timeout: int, errors: list | None = None):
-    """Return {param: [draws]} for a single seeded fit, or None on failure.
+             seed: int, timeout: int):
+    """Run a single seeded fit. Returns ``(answer, error)``.
 
-    A failure's real reason is appended to ``errors`` (when given) so the
-    batch can surface it instead of the generic "execution failed".
+    ``answer`` is ``{param: [draws]}`` on success (``error`` None), or ``None`` on
+    failure with ``error`` carrying the real reason, so the batch can surface it
+    instead of the generic "execution failed".
     """
     try:
         fit = model.sample(
@@ -92,28 +93,26 @@ def _one_fit(model, data: dict, params: list[str], sampling: dict,
         out: dict[str, list] = {}
         for p in params:
             if p not in df.columns:
-                if errors is not None:
-                    errors.append(f"model does not expose queried parameter {p!r}")
-                return None
+                return None, f"model does not expose queried parameter {p!r}"
             out[p] = df[p].astype(float).tolist()
-        return out
+        return out, None
     except Exception as e:
-        if errors is not None:
-            msg = str(e).strip().splitlines()
-            errors.append(f"stan fit failed (timeout {timeout}s): "
-                          + (msg[-1][:200] if msg else type(e).__name__))
-        return None
+        msg = str(e).strip().splitlines()
+        return None, ("stan fit failed (timeout {}s): ".format(timeout)
+                      + (msg[-1][:200] if msg else type(e).__name__))
 
 
-def execute_stan_batch(code: str, seeds, timeout: int, workers: int) -> list:
+def execute_stan_batch(code: str, seeds, timeout: int, workers: int):
     """Run a Stan bundle across seeds; one record-of-clouds per seed.
 
-    Returns a list aligned with ``seeds``; a failed fit is ``None`` (the GT
-    cache never stores a batch containing a failure).
+    Returns ``(answers, errors)`` aligned with ``seeds``: ``answers[i]`` is the
+    fit's record or ``None`` for a failed seed; ``errors[i]`` is that seed's real
+    reason (``None`` on success). The GT cache never stores a batch containing a
+    failure.
     """
     seeds = list(seeds)
     if not seeds:
-        return []
+        return [], []
     with _cwd_guard():
         try:
             b = unpack(code)
@@ -143,19 +142,19 @@ def execute_stan_batch(code: str, seeds, timeout: int, workers: int) -> list:
         # a fit; run a few fits concurrently but keep total processes bounded.
         chains = b.sampling.get("chains", 4)
         fit_workers = max(1, min(len(seeds), max(1, workers // chains)))
-        errors: list = []
 
         def run(seed: int):
-            return _one_fit(model, b.data, b.params, b.sampling, seed, fit_timeout,
-                            errors=errors)
+            return _one_fit(model, b.data, b.params, b.sampling, seed, fit_timeout)
 
         if fit_workers == 1:
-            results = [run(s) for s in seeds]
+            pairs = [run(s) for s in seeds]
         else:
             with ThreadPoolExecutor(max_workers=fit_workers) as ex:
-                results = list(ex.map(run, seeds))
-        if all(r is None for r in results) and errors:
+                pairs = list(ex.map(run, seeds))
+        answers = [a for a, _ in pairs]
+        errors = [e for _, e in pairs]
+        if all(a is None for a in answers):
             # Every fit failed: surface the real reason (mirrors the pyro batch
             # contract) instead of the generic "execution failed" downstream.
-            raise RuntimeError(errors[0])
-        return results
+            raise RuntimeError(next((e for e in errors if e), "execution failed"))
+        return answers, errors

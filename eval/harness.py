@@ -12,6 +12,7 @@ import re
 
 from eval.algebra import Spec, _has_draws_field, canonicalize
 from eval.config import DEFAULT_N_MC, DEFAULT_SEED, DEFAULT_TIMEOUT, total_exec_workers
+from eval.error_tags import join_reasons
 from eval.gt_cache import cached_run
 
 # Defaults match SCHEMA.md: k=5 for non-draws, k=3 for draws blocks.
@@ -82,15 +83,15 @@ def collect_gt_answers(
     if _has_draws_field(spec):
         total = k_draws * n_draws
         seeds = [base_seed + i for i in range(total)]
-        raw = cached_run(language, code, seeds, timeout=timeout,
-                         workers=workers, use_cache=use_cache)
+        raw, errs = cached_run(language, code, seeds, timeout=timeout,
+                               workers=workers, use_cache=use_cache)
         canonical: list = []
         n_runs = 0
         for block in range(k_draws):
-            chunk = [a for a in raw[block * n_draws:(block + 1) * n_draws]
-                     if a is not None]
+            sl = slice(block * n_draws, (block + 1) * n_draws)
+            chunk = [a for a in raw[sl] if a is not None]
             if not chunk:
-                raise RuntimeError("all runs failed")
+                raise RuntimeError(join_reasons(errs[sl]))
             n_runs += len(chunk)
             canonical.append(canonicalize(chunk, spec))
         return canonical, n_runs
@@ -99,11 +100,12 @@ def collect_gt_answers(
     # `timeout` = per-run budget; each executor applies the budget policy
     # documented in eval.config (Pyro seed scaling + chunk cap, Stan data/regime
     # scaling, WebPPL per-process as-is).
-    raw = cached_run(language, code, seeds, timeout=timeout,
-                     workers=workers, use_cache=use_cache)
-    n_bad = sum(a is None for a in raw)
-    if n_bad:
-        raise RuntimeError(f"{n_bad}/{len(raw)} seeded runs failed")
+    raw, errs = cached_run(language, code, seeds, timeout=timeout,
+                           workers=workers, use_cache=use_cache)
+    if any(a is None for a in raw):
+        # Surface the real per-seed reason(s), not a generic count — so the
+        # scorer's error_tag reflects the actual cause (eval.error_tags).
+        raise RuntimeError(join_reasons(errs))
     return [canonicalize(a, spec) for a in raw], k_exact
 
 

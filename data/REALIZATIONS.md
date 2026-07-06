@@ -348,6 +348,63 @@ posteriordb (`eval/posteriordb.py`, started 2026-06-18). That inverts several st
   other reparameterizations share a posterior, so they'd get identical statements;
   ingest only one (the 12 radon_mn variants ≈ 6 real models).
 
+### 7b. Gen (Julia / Gen.jl) — exact discrete enumeration (2026-07-06)
+
+Gen follows the *translate-the-WebPPL-column* checklist (§7), not the source-native
+pattern — WebPPL stays the authoritative GT; Gen reproduces it. But Gen is **scoped
+to exact discrete inference** (`enumerative_inference` → the exact posterior), the
+family where it is a clean, idiomatic fit. It has no NUTS, so posteriordb-style
+continuous hierarchical models are out of scope (that was the feasibility call).
+
+- **Executor** (`eval/executor_gen.py`): a Julia subprocess runs the program; the
+  injected preamble supplies `__pplgym_serialize` (recursive → the algebra wire
+  forms) and `__pplgym_enum_dist(res)` (reduces an `enumerative_inference` result
+  to `{__kind:distribution, support, probs}`, aggregating duplicate return values).
+  Because exact inference is **deterministic given the code**, `execute_gen_batch`
+  runs the program **once and replicates** across seeds — which also amortizes
+  Julia's per-`@gen`-function JIT (~9 s cold, paid once, not per seed). A run
+  failure is a whole-run failure → raises the real reason (batch contract).
+- **Toolchain:** Julia 1.10.5 + Gen 0.4.8, **box only** (no Julia on the laptop).
+  Set `PPL_GYM_JULIA` to the julia binary when it is not on PATH. `EXECUTOR_VERSION
+  ["gen"]="gen1"`.
+- **Realization contract** (bind a top-level `ANSWER`, like WebPPL/Pyro):
+  - `dist`   → `ANSWER = __pplgym_enum_dist(enumerative_inference(model, args, obs, grid))`.
+  - `record` → `ANSWER = Dict("field" => __pplgym_enum_dist(...), ...)`.
+  - dist over **record-valued labels** → the `@gen` returns a `Dict("k"=>v)`; the
+    serializer keeps the object as a support element (the mapping form can't — JSON
+    keys are strings).
+- **Idioms (validated on the pilot):**
+  - Discrete latents: `{:addr} ~ bernoulli(p)` / `uniform_discrete(lo,hi)`; the
+    `choice_vol_grid(...)` must list **every unobserved latent address** with its
+    full support (`[false,true]`, `[1,2,3]`).
+  - Hard condition (`condition(c)`): an observed deterministic channel —
+    `{:c} ~ bernoulli(c ? 1.0 : 0.0)` in the model + `choicemap((:c, true))` in obs.
+  - Intervention / `do(x=v)`: pass the forced value as a model arg and omit that
+    address (so the grid doesn't enumerate it); conditioning: keep the address +
+    observe it.
+- **Validation:** compare the Gen canonical answer against the **stored WebPPL GT**
+  (`_gt_answers.jsonl`) via `algebra.agreement` — the box has Julia but not WebPPL,
+  and the answers are exact, so comparing to the frozen GT is faithful (pilot
+  distances ~1e-17 vs tol 1e-9). No WebPPL re-execution on the box needed.
+  **Caveat — forward-sampled GTs.** A few probmods problems compute their WebPPL GT
+  with `Infer({method:'forward', samples:N})` (a Monte-Carlo estimate, not exact
+  enumeration). There, Gen's exact enumerate is *more accurate than the frozen GT*,
+  so a quick agreement-vs-frozen-GT check with tol≈0 spuriously FAILS (the distance
+  is just the GT's own MC noise — e.g. gen-models ex5.b: Gen 0.4 vs GT-sample 0.3998,
+  d=0.0002). Trust the analytic value / the real gate's measured floor
+  (~0.005-0.01 for 10k samples), which passes them. Don't "fix" a Gen realization
+  that already returns the exact truth.
+- **Availability boundary — Gen has no `factor`.** `enumerative_inference` computes
+  a *normalized* posterior from a proper generative model; there is no first-class
+  unnormalized potential. So problems that soft-condition via `factor(w)` with a
+  positive/arbitrary weight (the **agents-as-programs** utility-weighted decisions)
+  are **Gen-unavailable** — encoding the factor via a hand-built custom distribution
+  would be exactly the numbers-that-pass veneer §1 bans. **Nested inference** (RSA
+  stacks, nested social-cognition) is likewise deferred (inference-inside-a-model is
+  not idiomatic `@gen`). Continuous-latent discrete-query problems (e.g. some
+  observing-sequences) need a `choice_vol_grid` over a continuous range (approx) —
+  deferred until the exact-discrete column is complete.
+
 ---
 
 ## Per-language availability

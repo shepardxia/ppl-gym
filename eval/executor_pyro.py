@@ -355,13 +355,14 @@ sys.stdout.write(json.dumps(__results))
 '''
 
 
-def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1) -> list:
+def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1):
     """Run ``code`` once per seed, seeds split into <=``workers`` chunk subprocesses.
 
-    Returns a list aligned with ``seeds``: the parsed answer per seed, or
-    ``None`` for a failed seed.  ``timeout`` is the per-run budget; the policy
-    in eval.config turns it into a per-chunk bound (seed scale x chunk seed
-    count, capped) — wall-clock = slowest chunk.  Per-seed reseed inside a
+    Returns ``(answers, errors)`` aligned with ``seeds``: ``answers[i]`` is the
+    parsed answer or ``None`` for a failed seed; ``errors[i]`` is that seed's
+    real reason (``None`` on success). ``timeout`` is the per-run budget; the
+    policy in eval.config turns it into a per-chunk bound (seed scale x chunk
+    seed count, capped) — wall-clock = slowest chunk.  Per-seed reseed inside a
     chunk (set_rng_seed + clear_param_store + fresh namespace) reproduces
     fresh-process-per-seed output exactly, so chunk boundaries never affect
     results and cached runs stay valid.
@@ -370,7 +371,7 @@ def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1) ->
 
     seeds = list(seeds)
     if not seeds:
-        return []
+        return [], []
     n_chunks = min(max(1, workers), len(seeds))
     size = (len(seeds) + n_chunks - 1) // n_chunks
     chunks = [seeds[i:i + size] for i in range(0, len(seeds), size)]
@@ -383,16 +384,18 @@ def execute_pyro_batch(code: str, seeds, timeout: int = 60, workers: int = 1) ->
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
         futures = [pool.submit(_run_pyro_chunk, code, c, budget(c)) for c in chunks]
-        results, first_err = [], None
+        chunk_out, first_err = [], None
         for fut in futures:
             try:
-                results.append(fut.result())
+                chunk_out.append(fut.result())
             except RuntimeError as e:
                 first_err = first_err or e
-                results.append(None)
+                chunk_out.append(None)
     if first_err is not None:
         raise first_err
-    return [a for chunk in results for a in chunk]
+    answers = [a for ans, _ in chunk_out for a in ans]
+    errors = [e for _, errs in chunk_out for e in errs]
+    return answers, errors
 
 
 def _run_pyro_chunk(code: str, seeds: list, timeout: int) -> list:
@@ -427,10 +430,16 @@ def _run_pyro_chunk(code: str, seeds: list, timeout: int) -> list:
             raise RuntimeError("non-JSON output from pyro program")
         if not isinstance(raw, list) or len(raw) != len(seeds):
             raise RuntimeError("pyro batch returned the wrong number of results")
-        return [
-            None if (isinstance(a, dict) and "__pplgym_error__" in a) else a
-            for a in raw
-        ]
+        answers: list = []
+        errors: list = []
+        for a in raw:
+            if isinstance(a, dict) and "__pplgym_error__" in a:
+                answers.append(None)
+                errors.append(str(a["__pplgym_error__"]) or "execution failed")
+            else:
+                answers.append(a)
+                errors.append(None)
+        return answers, errors
     finally:
         os.unlink(tmp_path)
 

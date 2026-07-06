@@ -378,7 +378,7 @@
     if (src.bodyHtml != null) return src.bodyHtml;
     if (src.error) {
       return `<div class="compare-error">` +
-        `<div class="compare-error-hd">execution error</div>` +
+        `<div class="compare-error-hd">execution error${src.errorTag ? ` · ${escapeHtml(src.errorTag)}` : ''}</div>` +
         `<pre class="compare-error-msg">${escapeHtml(src.error)}</pre>` +
         (src.code ? renderCodeBlock(src.code, src.codeLang || 'webppl') : '') +
       `</div>`;
@@ -406,7 +406,7 @@
       body = src.bodyHtml;
     } else if (src.error) {
       body = `<div class="compare-error">` +
-        `<div class="compare-error-hd">execution error</div>` +
+        `<div class="compare-error-hd">execution error${src.errorTag ? ` · ${escapeHtml(src.errorTag)}` : ''}</div>` +
         `<pre class="compare-error-msg">${escapeHtml(src.error)}</pre>` +
         (src.code ? renderCodeBlock(src.code, src.codeLang || 'webppl') : '') +
         `</div>`;

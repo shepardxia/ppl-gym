@@ -171,8 +171,12 @@ def execute_webppl(code: str, timeout: int = 30, random_seed: int | None = None)
         os.unlink(tmp_path)
 
 
-def execute_webppl_batch(code: str, seeds, timeout: int = 30, workers: int = 8) -> list:
-    """Run ``code`` once per seed, returning answers aligned with ``seeds``.
+def execute_webppl_batch(code: str, seeds, timeout: int = 30, workers: int = 8):
+    """Run ``code`` once per seed. Returns ``(answers, errors)`` aligned with ``seeds``.
+
+    ``answers[i]`` is the parsed answer or ``None`` for a failed seed; ``errors[i]``
+    is that seed's real failure reason (``None`` on success), so the harness can
+    raise the actual cause instead of a generic count.
 
     WebPPL seeds its RNG from a process-start env override, so it cannot reseed
     in-process — this is per-seed spawning under the batch interface (same seeds,
@@ -184,8 +188,9 @@ def execute_webppl_batch(code: str, seeds, timeout: int = 30, workers: int = 8) 
 
     seeds = list(seeds)
     if not seeds:
-        return []
+        return [], []
     results: list = [None] * len(seeds)
+    errors: list = [None] * len(seeds)
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         futs = {
             pool.submit(execute_webppl, code, timeout=timeout, random_seed=s): i
@@ -193,8 +198,11 @@ def execute_webppl_batch(code: str, seeds, timeout: int = 30, workers: int = 8) 
         }
         for fut, i in futs.items():
             r = fut.result()
-            results[i] = r.answer if r.success else None
-    return results
+            if r.success:
+                results[i] = r.answer
+            else:
+                errors[i] = r.error_message or "execution failed"
+    return results, errors
 
 
 def _extract_error(text: str) -> str:

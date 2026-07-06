@@ -29,6 +29,7 @@ EXECUTOR_VERSION = {
     "pyro": "py3",        # py3: float64 default + import-free preamble
     "stan": "st1",        # cmdstanpy NUTS, record{param:[draws]}
     "reference": "ref1",  # replayed posteriordb gold draws
+    "gen": "gen1",        # Gen.jl subprocess, exact/enumerative, mapping-dict answer
 }
 
 # Absolute, repo-anchored: a concurrent Stan compile (cmdstanpy) transiently
@@ -62,30 +63,35 @@ def cached_run(
     timeout: int,
     workers: int,
     use_cache: bool = True,
-) -> list:
-    """Return raw serialized answers aligned with ``seeds``.
+) -> tuple[list, list]:
+    """Return ``(answers, errors)`` aligned with ``seeds``.
 
-    On a cache hit, loads from disk. On a miss, runs the language's batch
-    executor and writes the result ONLY if every seed succeeded (a partial /
-    failed run is never cached, so a transient failure can be retried).
+    ``answers[i]`` is the serialized answer or ``None`` for a failed seed;
+    ``errors[i]`` is that seed's real failure reason (``None`` on success), so
+    callers can raise the actual cause. On a cache hit, loads answers from disk
+    (a cached run has no failures → all-None errors). On a miss, runs the
+    language's batch executor and writes the ANSWERS ONLY if every seed
+    succeeded (a partial / failed run is never cached, so a transient failure
+    can be retried; the on-disk cache format is unchanged — answers, no errors).
     """
     seeds = list(seeds)
     if not seeds:
-        return []
+        return [], []
 
     active = use_cache and not _disabled()
     path = _CACHE_DIR / f"{_key(language, code, seeds)}.json" if active else None
     if path is not None and path.exists():
         try:
-            return json.loads(path.read_text())
+            answers = json.loads(path.read_text())
+            return answers, [None] * len(answers)
         except (json.JSONDecodeError, OSError):
             pass  # corrupt cache entry → recompute
 
-    raw = batch_executor_for(language)(code, seeds, timeout, workers)
+    answers, errors = batch_executor_for(language)(code, seeds, timeout, workers)
 
-    if path is not None and all(a is not None for a in raw):
+    if path is not None and all(a is not None for a in answers):
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(raw))
+        tmp.write_text(json.dumps(answers))
         tmp.replace(path)  # atomic publish
-    return raw
+    return answers, errors

@@ -15,20 +15,23 @@ from __future__ import annotations
 from eval.posteriordb import reference_blocks
 
 
-def execute_reference_batch(code: str, seeds, timeout: int, workers: int) -> list:
+def execute_reference_batch(code: str, seeds, timeout: int, workers: int):
     """Replay gold draws as one record-of-clouds per seed.
 
-    ``code`` is the posteriordb posterior name. ``seeds`` only fixes how many
-    disjoint chain-blocks to carve (the draws themselves are stored, not
-    sampled), so each seed maps to one block.
+    Returns ``(answers, errors)`` aligned with ``seeds`` (batch executor
+    contract). ``code`` is the posteriordb posterior name. ``seeds`` only fixes
+    how many disjoint chain-blocks to carve (the draws themselves are stored,
+    not sampled), so each seed maps to one block. Stored draws never fail a
+    single block — a shortfall raises (whole-run failure), so ``errors`` is
+    all-None on success.
     """
     seeds = list(seeds)
     if not seeds:
-        return []
+        return [], []
     name = code.strip()
     blocks = reference_blocks(name, len(seeds))
     if len(blocks) < len(seeds):
         raise RuntimeError(
             f"reference '{name}' has {len(blocks)} chain-blocks but "
             f"{len(seeds)} seeds requested; reduce k.")
-    return blocks[: len(seeds)]
+    return blocks[: len(seeds)], [None] * len(seeds)

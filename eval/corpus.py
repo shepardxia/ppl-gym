@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from eval.executor import execute_webppl_batch
+from eval.executor_gen import execute_gen_batch
 from eval.executor_pyro import execute_pyro_batch
 from eval.executor_reference import execute_reference_batch
 from eval.executor_stan import execute_stan_batch
@@ -21,11 +22,13 @@ from eval.io import load_jsonl
 # import execute_webppl / execute_pyro directly from their executor modules.)
 #   stan      — compile + NUTS-sample a self-contained Stan bundle (posteriordb)
 #   reference — replay posteriordb's stored gold draws as the GT column
+#   gen       — Gen.jl (Julia) subprocess, exact/enumerative discrete inference
 BATCH_EXECUTORS = {
     "webppl": execute_webppl_batch,
     "pyro": execute_pyro_batch,
     "stan": execute_stan_batch,
     "reference": execute_reference_batch,
+    "gen": execute_gen_batch,
 }
 
 

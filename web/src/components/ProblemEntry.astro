@@ -225,9 +225,11 @@ for (const r of rollouts) {
     tv: r.distance, badge: statusBadge(r.status, rolloutTone(r.status)),
     code: r.code, codeLang: info.codeLang,
     ...(r.error ? { error: r.error } : {}),
+    ...(r.error_tag ? { errorTag: r.error_tag } : {}),
   };
   const dBit = r.distance != null ? ` (d=${fmtTV(r.distance)})` : '';
-  orderedSources.push({ key, opt: `${r.model} · ${statusLabel(r.status)}${dBit}` });
+  const tagBit = (r.status !== 'pass' && r.error_tag) ? ` [${r.error_tag}]` : '';
+  orderedSources.push({ key, opt: `${r.model} · ${statusLabel(r.status)}${dBit}${tagBit}` });
 }
 
 // Compare columns: each header is a custom parchment dropdown (NOT a native
