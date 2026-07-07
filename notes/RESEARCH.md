@@ -392,6 +392,23 @@ where a second column exists). No gate shortcuts at scale — the gate IS the pr
   Deferred clean-but-hard: conditioning/ex4.c (2^20 grid), observing-sequences/ex3.b (MCMC/unclear
   coupling), occams/ex1.2 (heavy hypothesis-space port). Not-in-V1: agents soft-factor (unavailable),
   RSA/nested (defer). Feasible-remaining discrete ≈ a handful; continuous-latent (8) need grid.
+- **Committed + pushed** (user authorized, around): 6d3b610 — Gen column + executor, error-tag
+  pipeline (web/HF), posteriordb 65→75, DATASET_GENERATION.md. CLAUDE.md excluded; web build verified
+  deployable first.
+- **Deferred Gen tackled (2 added → 28):**
+  - **occams/ex1.2** (number-game concept learning): ported the ~214-hypothesis space + set logic to
+    Julia; encoded `Categorical(uniform set)` observe as a bernoulli likelihood channel
+    `bernoulli(ex∈set ? 1/|set| : 0)` observed true. PASS exact (d~2e-17), 34-hyp support matches.
+  - **conditioning/ex4.c** via the FAITHFUL full 2^19 enumerate (no hand-marginalization veneer) —
+    Gen handles 524k grid points in 52s wall. PASS exact (d~1e-15).
+  - **Stay deferred (principled):** the 8 continuous-latent observing-sequences/hierarchical all have
+    genuine `dirichlet(Drift)` transitions + MCMC → not exact-enumerable in Gen (need a simplex grid =
+    approximate, or a Gen SAMPLING regime that breaks the executor's run-once-replicate exact scope).
+    ex3.b: two independent S() calls (condition on one, return other) → GT 0.591 vs prior-expected 0.5,
+    unclear coupling / possibly-suspect GT — left alone. agents soft-factor = Gen-unavailable (no
+    factor). RSA/social-cognition-nested (agents ex4.a/b, social ex1.1/1.2) = need nested-inference
+    composition (Gen can, but a real per-problem design effort) — the next Gen frontier.
+  - **Gen column = 28 exact-discrete realizations, all validated on-box vs webppl GT.**
 - **error-tag → web/HF wired + backfilled** (from earlier this session): export carries error+error_tag,
   browser shows [tag], web_rollouts backfilled (all 2712 matrix exec_errors tagged; real classes
   recovered on LAPTOP — the box re-exec was invalid, lacked node/webppl + wrong venv path). triage
