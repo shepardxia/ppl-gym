@@ -167,17 +167,45 @@ def execute_gen(code: str, timeout: int = 60, random_seed: int = 0) -> Execution
         os.unlink(tmp_path)
 
 
+# A realization declares itself STOCHASTIC (sampling inference: mh / importance /
+# hmc over continuous latents) by including this marker anywhere in its code. Then
+# each seed is an independent reseeded run — the batch must NOT replicate one run
+# (that would report zero self-noise and a bogus tolerance). Exact/enumerative
+# realizations omit it and get the cheap run-once-replicate path.
+_SAMPLE_MARKER = "PPLGYM_SAMPLE"
+
+
 def execute_gen_batch(code: str, seeds, timeout: int = 60, workers: int = 1):
     """Run ``code`` and return ``(answers, errors)`` aligned with ``seeds``.
 
-    Gen realizations are exact (enumerative) → deterministic given the code, so a
-    batch runs the program ONCE and replicates the answer across seeds (also
-    amortizing Julia JIT). A run failure is a whole-run failure → raises the real
-    reason (batch-executor contract), never a per-seed None.
+    Two modes:
+      - **exact** (default): enumerative_inference → deterministic given the code,
+        so run ONCE and replicate across seeds (amortizes Julia JIT). A run failure
+        is a whole-run failure → raises the real reason.
+      - **sampling** (code contains the ``PPLGYM_SAMPLE`` marker): mh/importance/hmc
+        over continuous latents is stochastic, so each seed is an independent
+        reseeded run (parallel across ``workers``); ``answers[i]`` is that seed's
+        cloud or ``None``, ``errors[i]`` its reason. All-failed → raises.
     """
     seeds = list(seeds)
     if not seeds:
         return [], []
+    if _SAMPLE_MARKER in code:
+        from concurrent.futures import ThreadPoolExecutor
+        answers: list = [None] * len(seeds)
+        errors: list = [None] * len(seeds)
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, len(seeds)))) as pool:
+            futs = {pool.submit(execute_gen, code, timeout=timeout, random_seed=s): i
+                    for i, s in enumerate(seeds)}
+            for fut, i in futs.items():
+                r = fut.result()
+                if r.success:
+                    answers[i] = r.answer
+                else:
+                    errors[i] = r.error_message or "gen execution failed"
+        if all(a is None for a in answers):
+            raise RuntimeError(next((e for e in errors if e), "gen execution failed"))
+        return answers, errors
     r = execute_gen(code, timeout=timeout, random_seed=seeds[0])
     if not r.success:
         raise RuntimeError(r.error_message or "gen execution failed")

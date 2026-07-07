@@ -412,15 +412,22 @@ continuous hierarchical models are out of scope (that was the feasibility call).
   theory-of-mind vending-machine (social-cognition ex1.1/ex1.2). **Gotcha:** use true
   `-Inf` for `log(0)` (out-of-literal-support → speaker prob exactly 0); a `log(p+ε)`
   floor leaks probability at small α.
-- **Genuine availability boundary = continuous latents + method-pinned.**
-  - Continuous-latent models (hierarchical Gaussian, Dirichlet-transition HMMs,
-    Beta-Binomial) are **not exact-enumerable** — Gen CAN do them via its **sampling**
-    inference (`importance_sampling` / `mh` / `hmc`), but that is a different executor
-    regime (per-seed sampling, not run-once-replicate; an approximate answer needing a
-    measured floor). A V2 extension, not built. ~16 probmods problems sit here.
-  - The **inference-algorithms** chapter (ex1.1/1.2/1.3/2.4) pins a specific sampler —
-    outside the determination criterion — so it is **Gen-unavailable** for the same
-    reason it is Pyro-unavailable.
+- **Continuous latents → the V2 sampling regime (built).** Continuous-latent models
+  (Beta-Binomial, hierarchical Gaussian, Dirichlet-transition HMMs) are not exact-
+  enumerable, but Gen does them via **sampling** (`mh` / `importance` / `hmc`). A
+  realization declares itself stochastic with the marker **`PPLGYM_SAMPLE`** anywhere
+  in its code; the executor then runs **each seed independently** (reseeded, parallel)
+  instead of run-once-replicate — one run does an MCMC chain and binds `ANSWER` to the
+  collected samples (a cloud) or a posterior expectation. The answer is **approximate**,
+  so validation is agreement-within-a-**measured-floor** (not exact match), exactly like
+  the Pyro/Stan sampling GTs. Proven on `bayesian-data-analysis/ex1.2` (mh over a Beta
+  latent → posterior-predictive cloud; d=0.010 vs measured tol=0.086, seeds give distinct
+  clouds). Gotchas: use Gen's own distributions (`beta`, `binom`, `normal`, …) — the box
+  `Distributions.jl` may be absent; sample outside `@gen` via `Gen.random(dist, args…)`.
+  ~17 more probmods/dippl continuous problems follow this pattern (not yet all authored).
+- **Method-pinned still unavailable.** The **inference-algorithms** chapter
+  (ex1.1/1.2/1.3/2.4) pins a specific sampler — outside the determination criterion —
+  so it is **Gen-unavailable** for the same reason it is Pyro-unavailable.
 
 ---
 

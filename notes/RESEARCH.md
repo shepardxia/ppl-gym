@@ -453,6 +453,15 @@ where a second column exists). No gate shortcuts at scale — the gate IS the pr
   must be an adjective, never "John") → bounded, authored, PASSED. Covers HMMs/factor-seq/enumeration/
   deterministic-CPS-factorial. 2 gaussian (particlefilter atom-2/3) deferred to V2.
   **Gen column = 80 (38 probmods2 + 29 forestdb + 13 dippl), all on-box-validated exact.**
+- **V2 sampling regime BUILT + proven.** executor_gen gained a per-seed sampling mode: a realization
+  with the marker `PPLGYM_SAMPLE` runs each seed independently (reseeded, parallel) instead of
+  run-once-replicate, so a stochastic mh/importance chain gives a proper cloud + non-zero self-noise
+  (replicate would report bogus zero-noise). Pilot: bayesian-data-analysis/ex1.2 (mh over a Beta
+  latent → posterior-predictive cloud) validated vs the webppl MCMC GT with a MEASURED floor —
+  d=0.010 vs tol=0.086, seeds give distinct clouds. Continuous-latent problems are now Gen-reachable
+  (approximate, floor-validated, like pyro/stan sampling GTs). REALIZATIONS.md §7b updated. Installed
+  Distributions.jl on box; use Gen-native dists (beta/binom/normal) + Gen.random(dist,args) to sample
+  outside @gen. **Gen column = 81** (80 exact + 1 V2). ~17 more continuous follow the same pattern.
 - **error-tag → web/HF wired + backfilled** (from earlier this session): export carries error+error_tag,
   browser shows [tag], web_rollouts backfilled (all 2712 matrix exec_errors tagged; real classes
   recovered on LAPTOP — the box re-exec was invalid, lacked node/webppl + wrong venv path). triage
