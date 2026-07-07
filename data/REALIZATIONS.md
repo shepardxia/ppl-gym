@@ -348,13 +348,16 @@ posteriordb (`eval/posteriordb.py`, started 2026-06-18). That inverts several st
   other reparameterizations share a posterior, so they'd get identical statements;
   ingest only one (the 12 radon_mn variants ≈ 6 real models).
 
-### 7b. Gen (Julia / Gen.jl) — exact discrete enumeration (2026-07-06)
+### 7b. Gen (Julia / Gen.jl) — full textbook coverage (2026-07-06 exact; 2026-07-07 V2 sampling)
 
 Gen follows the *translate-the-WebPPL-column* checklist (§7), not the source-native
-pattern — WebPPL stays the authoritative GT; Gen reproduces it. But Gen is **scoped
-to exact discrete inference** (`enumerative_inference` → the exact posterior), the
-family where it is a clean, idiomatic fit. It has no NUTS, so posteriordb-style
-continuous hierarchical models are out of scope (that was the feasibility call).
+pattern — WebPPL stays the authoritative GT; Gen reproduces it. Gen now realizes
+**all 115 textbook problems**: 81 via **exact discrete inference**
+(`enumerative_inference` → the exact posterior), and 34 continuous-latent /
+hard-conditioned problems via the **V2 sampling regime** (mh / drift-mh / rejection /
+forward; see the V2 bullet below). Gen has no NUTS, so posteriordb-style continuous
+hierarchical *reference* models remain out of scope; the textbook continuous models
+are all small enough for MH/rejection.
 
 - **Executor** (`eval/executor_gen.py`): a Julia subprocess runs the program; the
   injected preamble supplies `__pplgym_serialize` (recursive → the algebra wire
@@ -412,22 +415,53 @@ continuous hierarchical models are out of scope (that was the feasibility call).
   theory-of-mind vending-machine (social-cognition ex1.1/ex1.2). **Gotcha:** use true
   `-Inf` for `log(0)` (out-of-literal-support → speaker prob exactly 0); a `log(p+ε)`
   floor leaks probability at small α.
-- **Continuous latents → the V2 sampling regime (built).** Continuous-latent models
-  (Beta-Binomial, hierarchical Gaussian, Dirichlet-transition HMMs) are not exact-
-  enumerable, but Gen does them via **sampling** (`mh` / `importance` / `hmc`). A
-  realization declares itself stochastic with the marker **`PPLGYM_SAMPLE`** anywhere
-  in its code; the executor then runs **each seed independently** (reseeded, parallel)
-  instead of run-once-replicate — one run does an MCMC chain and binds `ANSWER` to the
-  collected samples (a cloud) or a posterior expectation. The answer is **approximate**,
-  so validation is agreement-within-a-**measured-floor** (not exact match), exactly like
-  the Pyro/Stan sampling GTs. Proven on `bayesian-data-analysis/ex1.2` (mh over a Beta
-  latent → posterior-predictive cloud; d=0.010 vs measured tol=0.086, seeds give distinct
-  clouds). Gotchas: use Gen's own distributions (`beta`, `binom`, `normal`, …) — the box
-  `Distributions.jl` may be absent; sample outside `@gen` via `Gen.random(dist, args…)`.
-  ~17 more probmods/dippl continuous problems follow this pattern (not yet all authored).
-- **Method-pinned still unavailable.** The **inference-algorithms** chapter
-  (ex1.1/1.2/1.3/2.4) pins a specific sampler — outside the determination criterion —
-  so it is **Gen-unavailable** for the same reason it is Pyro-unavailable.
+- **Continuous latents → the V2 sampling regime (COMPLETE, 2026-07-07).** Continuous-
+  latent models (Beta-Binomial, hierarchical Gaussian, Dirichlet-transition HMMs, PCFGs,
+  noisy-OR causal, two-stage nested agents) are not exact-enumerable, but Gen does them
+  via **sampling**. A realization declares itself stochastic with the marker
+  **`PPLGYM_SAMPLE`** anywhere in its code; the executor then runs **each seed
+  independently** (reseeded, parallel) instead of run-once-replicate — one run binds
+  `ANSWER` to the collected samples (a cloud) or a posterior expectation. The answer is
+  **approximate**, so validation is agreement-within-a-**measured-floor**, like the
+  Pyro/Stan sampling GTs. **This closed the whole remaining textbook backlog: Gen now
+  realizes all 115 textbook problems (81 exact/enum + 34 sampling), 0 unavailable.**
+  Validated patterns (in `data/prompts/`-style templates, and the code itself):
+  - **forward** (no conditioning): a plain Julia loop of `Gen.random(dist,…)` draws into a
+    Vector. MATCH the WebPPL `Infer` sample count — `Infer({method:'forward'})` with no
+    `samples` arg defaults to **100** in WebPPL; a mismatch makes Gen's floor too tight.
+  - **conditioned MCMC**: `@gen` model, `generate(model, args, obs_choicemap)`, then cycle
+    single-site `mh(tr, select(addr))` (prior proposals — matches WebPPL's default kernel)
+    over the latent addresses; burn + collect. Match burn/lag/samples.
+  - **sharp / near-boundary posterior**: single-site prior MH mixes terribly. Use a
+    Gaussian-**drift** proposal (`@gen drift(tr); {:a} ~ normal(tr[:a], step); end` +
+    `mh(tr, drift, ())`) — same target, far better mixing. **Any distribution whose param
+    is a drifted latent (binom `p`, …) MUST `clamp` that param to its domain in the
+    likelihood** — an out-of-support latent still gets `-Inf` from its own prior and the
+    move is rejected, but without the clamp Julia throws a `DomainError` and crashes the run.
+  - **hard/curve conditioning** (the heart-curve trio ex1.1/1.2/1.3, interpolation ex2.4):
+    **rejection sampling** = forward-draw from the prior, keep draws satisfying the
+    condition → the *exact* conditioned posterior, no MH-on-a-thin-band mixing pain. (A
+    top-level `while` needs `global` on any reassigned counter — Julia script hard scope.)
+  - **factor / soft condition**: `{:c} ~ __pplgym_factor(w)` + `choicemap((:c, 0.0))`; use
+    true `-Inf` for a hard reject, never a `log(x+ε)` floor.
+- **Method-pinned problems ARE available via rejection.** The **inference-algorithms**
+  chapter (ex1.1/1.2/1.3/2.4) *describes* a specific sampler, but the ANSWER is the
+  conditioned posterior — method-independent (every correct sampler targets the same
+  distribution). Gen realizes all four by **rejection sampling** (exact conditioned
+  posterior), validated against the multi-seed WebPPL reference. (The earlier
+  "method-pinned → Gen-unavailable" call was over-conservative; the determination
+  criterion is met because the posterior, not the program, is pinned.)
+- **The validation gate: multi-seed WebPPL reference, not a single stored answer.** A
+  cross-language check must credit BOTH estimators' run-to-run noise. A single stored
+  `_gt_answers` answer *cannot reveal* that noise (`self_noise` is 0 for a `dist_enum`
+  histogram, tiny for one long cloud), so a floor built from it is too tight and
+  false-fails a correct Gen posterior whenever Gen mixes differently than WebPPL (seen on
+  mixture ex2.a: drift-MH Gen was right but the one-seed floor rejected it). Fix:
+  `eval/webppl_ref.py` runs each WebPPL realization over k seeds on the **laptop** (node;
+  the box has no webppl bundle) → `data/webppl_ref.json`; `eval/gen_validate.py` (box,
+  Julia) judges each Gen run against that k-run GT set (`eval.algebra.judge`, the exact
+  `score.py` path) so the floor is WebPPL's real cross-run noise. Draws-protocol refs are
+  pooled into `k_draws` blocks to match `collect_gt_answers`.
 
 ---
 
