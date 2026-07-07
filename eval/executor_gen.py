@@ -47,6 +47,22 @@ def _julia_bin() -> str:
 # The serializer errors on any type it does not recognize (no silent repr fallback).
 SERIALIZER_HEADER = r"""
 using Gen, JSON, Random
+
+# Soft factor / unnormalized potential. Gen's @gen DSL has no `factor`, but a
+# custom Distribution whose logpdf returns its argument, OBSERVED at a dummy
+# value, adds that argument to the trace log-weight — Gen's own extension
+# mechanism, the faithful translation of WebPPL's factor()/Pyro's pyro.factor.
+# Usage in a realization:  {:pot} ~ __pplgym_factor(w)  + choicemap((:pot, 0.0)).
+struct __PplgymFactor <: Gen.Distribution{Float64} end
+const __pplgym_factor = __PplgymFactor()
+(::__PplgymFactor)(w::Real) = 0.0
+Gen.random(::__PplgymFactor, w::Real) = 0.0
+Gen.logpdf(::__PplgymFactor, x::Real, w::Real) = Float64(w)
+Gen.logpdf_grad(::__PplgymFactor, x::Real, w::Real) = (nothing, nothing, nothing)
+Gen.has_output_grad(::__PplgymFactor) = false
+Gen.has_argument_grads(::__PplgymFactor) = (false,)
+Gen.is_discrete(::__PplgymFactor) = true
+
 function __pplgym_serialize(x)
     if isa(x, AbstractDict)
         return Dict(string(k) => __pplgym_serialize(v) for (k, v) in x)

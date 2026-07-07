@@ -394,16 +394,33 @@ continuous hierarchical models are out of scope (that was the feasibility call).
   d=0.0002). Trust the analytic value / the real gate's measured floor
   (~0.005-0.01 for 10k samples), which passes them. Don't "fix" a Gen realization
   that already returns the exact truth.
-- **Availability boundary — Gen has no `factor`.** `enumerative_inference` computes
-  a *normalized* posterior from a proper generative model; there is no first-class
-  unnormalized potential. So problems that soft-condition via `factor(w)` with a
-  positive/arbitrary weight (the **agents-as-programs** utility-weighted decisions)
-  are **Gen-unavailable** — encoding the factor via a hand-built custom distribution
-  would be exactly the numbers-that-pass veneer §1 bans. **Nested inference** (RSA
-  stacks, nested social-cognition) is likewise deferred (inference-inside-a-model is
-  not idiomatic `@gen`). Continuous-latent discrete-query problems (e.g. some
-  observing-sequences) need a `choice_vol_grid` over a continuous range (approx) —
-  deferred until the exact-discrete column is complete.
+- **Soft factor IS available** (an earlier note wrongly said otherwise — availability
+  is empirical, not predicted). The `@gen` DSL has no `factor`, but a custom
+  `Distribution` whose `logpdf` returns its argument, OBSERVED at a dummy value, adds
+  that argument to the trace log-weight. This is Gen's own extension mechanism (a
+  real `Gen.Distribution` subtype), not a veneer — the faithful translation of
+  WebPPL's `factor()`. Shipped in the executor header as `__pplgym_factor`:
+  `{:pot} ~ __pplgym_factor(w)` + `choicemap((:pot, 0.0))`. Verified exact on
+  agents-as-programs ex1.a (`factor(A*3)` → P(true)=0.95257), ex1.b, ex3.
+- **Nested inference (RSA / theory-of-mind) IS available** via **staged composition**:
+  compute each level (literal listener L0, speaker S1, ...) as a plain Julia function
+  that runs `enumerative_inference` and returns a probability vector; a higher level's
+  `@gen` model consumes the lower level's log-probs through `__pplgym_factor` — no
+  inference-inside-`@gen` (precompute the caches as function args). This is exactly how
+  RSA is written in any PPL (WebPPL nests `Infer` in `Infer`). Verified exact: the
+  3-level RSA (agents ex4.a, 4 alphas), the 4-level RSA (ex4.b, L1+L3), and the
+  theory-of-mind vending-machine (social-cognition ex1.1/ex1.2). **Gotcha:** use true
+  `-Inf` for `log(0)` (out-of-literal-support → speaker prob exactly 0); a `log(p+ε)`
+  floor leaks probability at small α.
+- **Genuine availability boundary = continuous latents + method-pinned.**
+  - Continuous-latent models (hierarchical Gaussian, Dirichlet-transition HMMs,
+    Beta-Binomial) are **not exact-enumerable** — Gen CAN do them via its **sampling**
+    inference (`importance_sampling` / `mh` / `hmc`), but that is a different executor
+    regime (per-seed sampling, not run-once-replicate; an approximate answer needing a
+    measured floor). A V2 extension, not built. ~16 probmods problems sit here.
+  - The **inference-algorithms** chapter (ex1.1/1.2/1.3/2.4) pins a specific sampler —
+    outside the determination criterion — so it is **Gen-unavailable** for the same
+    reason it is Pyro-unavailable.
 
 ---
 

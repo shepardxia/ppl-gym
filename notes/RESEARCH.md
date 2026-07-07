@@ -409,6 +409,25 @@ where a second column exists). No gate shortcuts at scale — the gate IS the pr
     factor). RSA/social-cognition-nested (agents ex4.a/b, social ex1.1/1.2) = need nested-inference
     composition (Gen can, but a real per-problem design effort) — the next Gen frontier.
   - **Gen column = 28 exact-discrete realizations, all validated on-box vs webppl GT.**
+- **AVAILABILITY RE-CHECK (user: "look into Gen more carefully") — my earlier calls were WRONG.**
+  Tested empirically instead of assuming (the standing "availability is empirical" rule):
+  - **Soft `factor` IS available.** Gen's `@gen` has no factor, but a custom `Gen.Distribution`
+    whose logpdf returns its arg, observed at a dummy value, adds it to the trace log-weight —
+    Gen's own extension mechanism, not a veneer. Shipped as `__pplgym_factor` in the executor
+    header. Verified exact: agents ex1.a (factor(A*3)→0.95257), ex1.b, ex3.
+  - **Nested inference (RSA / theory-of-mind) IS available** via staged composition (each level =
+    a Julia fn running enumerative_inference → prob-vector; higher level consumes lower's log-probs
+    via __pplgym_factor; no inference-inside-@gen). Verified exact: 3-level RSA (ex4.a ×4 alphas),
+    4-level RSA (ex4.b), ToM vending-machine (social ex1.1/ex1.2). Gotcha: true -Inf for log(0),
+    not a log(p+ε) floor (leaks prob at small α).
+  - Merged the 7 (agents ex1.a/ex1.b/ex3/ex4.a/ex4.b + social ex1.1/ex1.2) → **gen.jsonl = 35**.
+  - **Accurate probmods2 picture (70 total): 35 done; 15 more discrete-doable (next batch);
+    16 continuous-latent (Gaussian/Dirichlet/Beta — Gen CAN via sampling: importance/mh/hmc, but
+    that's a V2 executor regime = per-seed sampling + measured floor, approximate); 4 method-pinned
+    (inference-algorithms — genuinely unavailable, pins the sampler, same as pyro).**
+  - **Bigger implication**: RSA working means the ~27 forestdb RSA problems (cross-translation audit
+    marked HARD-for-Stan) are now Gen-CANDIDATES — Gen may be the natural language for the RSA corpus.
+  - REALIZATIONS.md §7b corrected (the "no factor / RSA-deferred" claim was wrong).
 - **error-tag → web/HF wired + backfilled** (from earlier this session): export carries error+error_tag,
   browser shows [tag], web_rollouts backfilled (all 2712 matrix exec_errors tagged; real classes
   recovered on LAPTOP — the box re-exec was invalid, lacked node/webppl + wrong venv path). triage
