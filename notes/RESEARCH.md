@@ -428,6 +428,15 @@ where a second column exists). No gate shortcuts at scale — the gate IS the pr
   - **Bigger implication**: RSA working means the ~27 forestdb RSA problems (cross-translation audit
     marked HARD-for-Stan) are now Gen-CANDIDATES — Gen may be the natural language for the RSA corpus.
   - REALIZATIONS.md §7b corrected (the "no factor / RSA-deferred" claim was wrong).
+- **Gen expansion (user: "go do more Gen"):** authored + on-box-validated 3 more probmods discrete
+  (agents ex2.a/ex2.b factor-over-offers, conditioning ex1.a value-query) + opened the **forestdb
+  RSA lane** — blm (3-level) proven exact, then 3 subagents authored the 28 remaining forestdb RSA
+  against the validated templates (blm/ex4.a/ex4.b + factor/staged-composition contract), I validate
+  each on-box vs webppl GT. **Batches 1+3: 18/18 pass exact** (incl. kachakeche 30³×3 grid, 4-level
+  scope, metaphor/irony/keysar/comparison-class/scalar-implicature; the subagents correctly resolved
+  webppl "missing return" extraction artifacts to the statement semantics, GT-verified). Batch 2 (9)
+  authoring. **Gen column = 57 (38 probmods + 19 forestdb).** Confirms Gen is the natural language for
+  the RSA/pragmatics corpus. Committed d6fa8e5 (35) + this milestone.
 - **error-tag → web/HF wired + backfilled** (from earlier this session): export carries error+error_tag,
   browser shows [tag], web_rollouts backfilled (all 2712 matrix exec_errors tagged; real classes
   recovered on LAPTOP — the box re-exec was invalid, lacked node/webppl + wrong venv path). triage
