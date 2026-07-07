@@ -10,14 +10,6 @@ import pytest
 
 from eval.corpus import is_available, load_corpus, load_realizations, load_unavailable
 
-# The inference-algorithms hard-condition method demos — Pyro-unavailable.
-_UNAVAILABLE_IDS = {
-    "probmods2-inference-algorithms/ex1.1",
-    "probmods2-inference-algorithms/ex1.2",
-    "probmods2-inference-algorithms/ex1.3",
-    "probmods2-inference-algorithms/ex2.4",
-}
-
 
 # ---------------------------------------------------------------------------
 # (a) is_available — available iff (available != False) AND has a code key
@@ -47,32 +39,34 @@ def test_is_available(rec, expected):
 # ---------------------------------------------------------------------------
 
 
-def test_load_corpus_pyro_excludes_unavailable():
-    """load_corpus('pyro') must not include any documented-unavailable problem."""
-    _, reals = load_corpus(language="pyro")
+@pytest.mark.parametrize("language", ["webppl", "pyro", "gen", "stan", "reference"])
+def test_load_corpus_excludes_unavailable(language):
+    """load_corpus must not include any documented-unavailable problem (holds for
+    any unavailable set, including empty — data-derived, so it never rebreaks as
+    the column evolves)."""
+    _, reals = load_corpus(language=language)
     real_ids = {r["problem_id"] for r in reals}
-    assert real_ids.isdisjoint(_UNAVAILABLE_IDS), (
-        f"unavailable ids found in corpus: {real_ids & _UNAVAILABLE_IDS}"
+    unavail_ids = {r["problem_id"] for r in load_unavailable(language)}
+    assert real_ids.isdisjoint(unavail_ids), (
+        f"[{language}] unavailable ids found in corpus: {real_ids & unavail_ids}"
     )
 
 
-def test_load_corpus_pyro_count_matches_available():
-    """load_corpus('pyro') count equals the number of available pyro realizations
-    (derived from the data, so it does not rebreak as the column evolves)."""
-    _, reals = load_corpus(language="pyro")
-    available = [r for r in load_realizations("pyro") if is_available(r)]
-    assert len(reals) == len(available), f"corpus {len(reals)} != available {len(available)}"
+@pytest.mark.parametrize("language", ["webppl", "pyro", "gen", "stan", "reference"])
+def test_load_corpus_count_matches_available(language):
+    """load_corpus count equals the number of available realizations (data-derived,
+    so it does not rebreak as the column evolves)."""
+    _, reals = load_corpus(language=language)
+    available = [r for r in load_realizations(language) if is_available(r)]
+    assert len(reals) == len(available), f"[{language}] corpus {len(reals)} != available {len(available)}"
 
 
-def test_load_unavailable_pyro():
-    """load_unavailable('pyro') returns exactly the documented gaps, and every
-    record carries a non-empty reason, has no code, and fails is_available."""
-    recs = load_unavailable("pyro")
-
-    unavail_ids = {r["problem_id"] for r in recs}
-    assert unavail_ids == _UNAVAILABLE_IDS, f"expected {_UNAVAILABLE_IDS}, got {unavail_ids}"
-
-    for rec in recs:
+@pytest.mark.parametrize("language", ["webppl", "pyro", "gen", "stan", "reference"])
+def test_unavailable_records_wellformed(language):
+    """Every unavailable record (however many) carries a non-empty reason, has no
+    code, and fails is_available — the unavailable-record contract, checked
+    against whatever the column currently declares."""
+    for rec in load_unavailable(language):
         assert rec.get("reason"), f"missing reason on {rec['problem_id']}"
         assert "code" not in rec, f"unavailable record must not have code: {rec['problem_id']}"
         assert not is_available(rec), f"is_available returned True for {rec['problem_id']}"

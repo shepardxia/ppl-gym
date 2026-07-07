@@ -44,7 +44,6 @@ from eval.algebra import AlgebraError, canonicalize, judge, parse_spec
 from eval.corpus import batch_executor_for, load_problems
 from eval.io import merge_jsonl
 
-REAL_PATH = Path("data/realizations/gen.jsonl")
 DEFAULT_SEEDS = [42, 43, 44, 45, 46]
 
 
@@ -68,15 +67,16 @@ def _gt_canons(ref_entry: dict, spec) -> list:
 
 
 def validate_one(
-    pid: str, code: str, spec, ref_entry: dict, *, seeds: list[int], timeout: int, workers: int
+    pid: str, code: str, spec, ref_entry: dict, *, language: str, seeds: list[int], timeout: int, workers: int
 ) -> dict:
-    """Judge a Gen realization against the multi-seed WebPPL reference.
+    """Judge a target-language realization against the multi-seed WebPPL reference.
 
     ``ref_entry`` = the WebPPL ref for this problem (from ``eval.webppl_ref``).
-    Canonicalize it into the GT set, run the Gen program over ``seeds``, then
-    judge each Gen run as a candidate against that GT (``eval.algebra.judge`` —
+    Canonicalize it into the GT set, run the ``language`` program over ``seeds``,
+    then judge each run as a candidate against that GT (``eval.algebra.judge`` —
     the exact path ``score.py`` uses; the tolerance floor is WebPPL's real
-    cross-run noise). The realization passes iff every Gen run passes.
+    cross-run noise). The realization passes iff every run passes. Language-
+    agnostic: works for gen (box, Julia) and pyro (box, torch) alike.
     """
     try:
         gts = _gt_canons(ref_entry, spec)
@@ -86,12 +86,12 @@ def validate_one(
         return {"problem_id": pid, "status": "gt_error", "error": "webppl ref has <2 usable runs"}
 
     try:
-        answers, errors = batch_executor_for("gen")(code, seeds, timeout, workers)
-    except Exception as e:  # whole-run failure surfaces the real Julia reason
+        answers, errors = batch_executor_for(language)(code, seeds, timeout, workers)
+    except Exception as e:  # whole-run failure surfaces the real reason
         return {"problem_id": pid, "status": "exec_error", "error": str(e)[:300]}
     gen_ok = [a for a in answers if a is not None]
     if not gen_ok:
-        reason = next((e for e in errors if e), "gen produced no runs")
+        reason = next((e for e in errors if e), f"{language} produced no runs")
         return {"problem_id": pid, "status": "exec_error", "error": str(reason)[:300]}
 
     verdicts = [judge(a, gts, spec) for a in gen_ok]  # each Gen run vs the WebPPL GT set
@@ -117,7 +117,8 @@ def load_batch(path: Path) -> list[dict]:
     return obj
 
 
-def run(batch: list[dict], *, ref_path: Path, seeds: list[int], timeout: int, workers: int, merge: bool) -> list[dict]:
+def run(batch, *, language, ref_path, seeds, timeout, workers, merge):
+    real_path = Path(f"data/realizations/{language}.jsonl")
     problems = {p["problem_id"]: p for p in load_problems()}
     ref = json.loads(ref_path.read_text())  # {pid: {seeds, answers}} from eval.webppl_ref
 
@@ -130,10 +131,10 @@ def run(batch: list[dict], *, ref_path: Path, seeds: list[int], timeout: int, wo
             results.append({"problem_id": pid, "status": "gt_error", "error": f"no WebPPL ref (run eval.webppl_ref --ids {pid})"})
         else:
             spec = parse_spec(problems[pid]["answer_spec"])
-            r = validate_one(pid, code, spec, ref[pid], seeds=seeds, timeout=timeout, workers=workers)
+            r = validate_one(pid, code, spec, ref[pid], language=language, seeds=seeds, timeout=timeout, workers=workers)
             results.append(r)
             if r["status"] == "pass":
-                passers.append({"problem_id": pid, "language": "gen", "code": code.strip(), "available": True})
+                passers.append({"problem_id": pid, "language": language, "code": code.strip(), "available": True})
 
         r = results[-1]
         extra = (f"  d={r.get('distance')} tol={r.get('tol')}  ({r.get('pass_frac')})"
@@ -144,22 +145,23 @@ def run(batch: list[dict], *, ref_path: Path, seeds: list[int], timeout: int, wo
     print(f"\n{n_pass}/{len(batch)} pass", flush=True)
 
     if merge and passers:
-        n = merge_jsonl(REAL_PATH, passers)
-        print(f"merged {len(passers)} passers -> {REAL_PATH} ({n} total rows)", flush=True)
+        n = merge_jsonl(real_path, passers)
+        print(f"merged {len(passers)} passers -> {real_path} ({n} total rows)", flush=True)
     return results
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Validate Gen realizations vs multi-seed WebPPL reference.")
+    p = argparse.ArgumentParser(description="Validate a target-language realization column vs the multi-seed WebPPL reference.")
     p.add_argument("--batch", required=True, help="JSON: list of {problem_id,code} or {pid:code}.")
+    p.add_argument("--language", default="gen", help="target realization language (gen/pyro/...); selects executor + merge file.")
     p.add_argument("--ref", default="data/webppl_ref.json",
                    help="multi-seed WebPPL reference (from eval.webppl_ref).")
     p.add_argument("--seeds", type=int, nargs="+", default=DEFAULT_SEEDS)
     p.add_argument("--timeout", type=int, default=300, help="per-run timeout seconds (default 300).")
     p.add_argument("--workers", type=int, default=len(DEFAULT_SEEDS))
-    p.add_argument("--merge", action="store_true", help="upsert passers into gen.jsonl.")
+    p.add_argument("--merge", action="store_true", help="upsert passers into data/realizations/<language>.jsonl.")
     a = p.parse_args()
-    run(load_batch(Path(a.batch)), ref_path=Path(a.ref), seeds=a.seeds,
+    run(load_batch(Path(a.batch)), language=a.language, ref_path=Path(a.ref), seeds=a.seeds,
         timeout=a.timeout, workers=a.workers, merge=a.merge)
 
 

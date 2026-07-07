@@ -24,8 +24,8 @@ node_modules/
 # GT execution cache (content-addressed; regenerable)
 data/.gt_cache/
 data/.rework/
-# multi-seed WebPPL reference for the Gen crosscheck (eval/webppl_ref.py; ~6MB, regenerable)
-data/webppl_ref.json
+# multi-seed WebPPL reference for the Gen/Pyro crosscheck (eval/webppl_ref.py; regenerable)
+data/webppl_ref*.json
 # compiled Stan executables (regenerable from realization bundles)
 data/.stan_cache/
 

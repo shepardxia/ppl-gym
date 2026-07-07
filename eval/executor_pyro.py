@@ -37,9 +37,10 @@ from pathlib import Path
 from eval.exec_common import ExecutionResult, loads_lenient, strip_ansi
 
 
-# Path to the project venv's python (so subprocess sees pyro/torch).
+# Path to the project venv's python (so subprocess sees pyro/torch). Overridable
+# via PPL_GYM_PYRO_PYTHON for a box whose venv isn't at ./.venv (mirrors PPL_GYM_JULIA).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_VENV_PY = _PROJECT_ROOT / ".venv" / "bin" / "python"
+_VENV_PY = Path(os.environ.get("PPL_GYM_PYRO_PYTHON", str(_PROJECT_ROOT / ".venv" / "bin" / "python")))
 
 
 def _subprocess_env(**extra: str) -> dict:

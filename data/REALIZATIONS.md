@@ -15,9 +15,10 @@ authoring *problems* (statements/specs); this doc is for authoring
 A realization is `{problem_id, language, code}` — or, where a problem can't be
 realized in a language, `{problem_id, language, available: false, reason}` (no
 `code`; see Per-language availability) — in `data/realizations/<language>.jsonl`.
-WebPPL is the reference column; Pyro is now **idiomatic**: 111/115 realizations
-crosscheck-verified against WebPPL GT *and* proper-usage audited, 4 marked
-unavailable. Stan / memo / pluck are planned.
+WebPPL is the reference column; Pyro is now **idiomatic**: all 144 textbook
+realizations crosscheck-verified against WebPPL GT *and* proper-usage audited (0
+unavailable — the 4 inference-algorithms demos closed via rejection, 2026-07-07).
+Gen is full over the same 144. Stan / memo / pluck are planned.
 
 ---
 
@@ -444,13 +445,17 @@ are all small enough for MH/rejection.
     top-level `while` needs `global` on any reassigned counter — Julia script hard scope.)
   - **factor / soft condition**: `{:c} ~ __pplgym_factor(w)` + `choicemap((:c, 0.0))`; use
     true `-Inf` for a hard reject, never a `log(x+ε)` floor.
-- **Method-pinned problems ARE available via rejection.** The **inference-algorithms**
-  chapter (ex1.1/1.2/1.3/2.4) *describes* a specific sampler, but the ANSWER is the
-  conditioned posterior — method-independent (every correct sampler targets the same
-  distribution). Gen realizes all four by **rejection sampling** (exact conditioned
-  posterior), validated against the multi-seed WebPPL reference. (The earlier
-  "method-pinned → Gen-unavailable" call was over-conservative; the determination
-  criterion is met because the posterior, not the program, is pinned.)
+- **Method-pinned-looking problems ARE available via rejection — in every language.**
+  The **inference-algorithms** chapter (ex1.1/1.2/1.3/2.4) *described* a specific sampler
+  in its query, but the ANSWER is the conditioned posterior — method-independent (every
+  correct sampler targets the same distribution). **Gen AND Pyro both realize all four by
+  rejection sampling** (forward-draw from the prior, keep draws on the hard band = the
+  exact conditioned posterior), each validated per-run against the multi-seed WebPPL
+  reference (`eval.gen_validate --language {gen,pyro}`, 5/5 seeds within floor; d well
+  under tol, e.g. ex2.4 d=0.0096 vs 0.044). The earlier "these are method-pinned →
+  unavailable" calls (first Gen, then Pyro) were both over-conservative; the determination
+  criterion is met because the posterior, not the program, is pinned. See the
+  sampler-prescription principle below.
 - **The validation gate: multi-seed WebPPL reference, not a single stored answer.** A
   cross-language check must credit BOTH estimators' run-to-run noise. A single stored
   `_gt_answers` answer *cannot reveal* that noise (`self_noise` is 0 for a `dist_enum`
@@ -472,30 +477,54 @@ Not every problem is realizable in every language. A realization is either
 first-class state, not a failure. This keeps a valid problem in the corpus for the
 languages that can express it, while honestly recording where another can't.
 
-First case (2026-06-15): the probmods **inference-algorithms** chapter's
-hard-condition method demos — `ex1.1`, `ex1.2`, `ex1.3` (the heart-curve trio) and
-`ex2.4` (rejection sampling). **WebPPL stays; Pyro is unavailable for all four.**
-The chapter's purpose is to demonstrate inference *algorithms* on deliberately hard
-conditions, so each query pins a specific sampler + settings — outside the
-determination criterion (realizing it would be transcription, not inference) — and
-each target is pathological for Pyro:
-- ex1.1/1.2/1.3 (heart-curve): gradient-hostile, multimodal thin-manifold
-  (`x^(2/3)` gradient singular at x=0; hard `|crossSection|<0.01` band → no valid
-  gradient init, so NUTS/HMC can't run; ex1.3 names HMC specifically; RandomWalkKernel
-  mixes pathologically slowly across the cusp → no stable GT at practical cost).
-- ex2.4 (interpolation): thin acceptance band (~2e-4) pins rejection sampling; the
-  posterior over `interpolationWeight` is determinate but cannot be certified in Pyro
-  at practical cost (plain Importance is accurate yet ill-posed at feasible counts and
-  times out at the counts needed to clear the floor; a guide needs fragile hand-tuning).
-This is evidence-based — each was genuinely attempted before being marked unavailable.
+**Current state: 0 unavailable rows in any language.** Every problem is realized in
+every applicable column (textbook: webppl+pyro+gen; posteriordb: stan+reference). The
+one long-standing gap — the 4 `inference-algorithms` heart-curve/interpolation demos,
+marked Pyro-unavailable — was **resolved 2026-07-07** (see below). The mechanism stays
+in place for the next genuine gap.
+
+### The sampler-prescription principle (2026-07-07)
+
+The answer is a mathematical object (a distribution, expectation, value), never "the
+output of a program." So the **query names the quantity and leaves the inference method
+free**; each language realizes it with its natural inference and the measured MC floor
+is the tolerance. Decide per problem with the **convergent-agreement test**: would two
+well-run samplers of *different kinds* (rejection vs MCMC vs importance vs enumerate)
+agree on the answer within MC noise?
+
+- **Yes → determinate target.** Do NOT name the sampler in the query. Available in every
+  language; the GT's incidental method is not part of the statement. Tolerance = measured
+  floor.
+- **No → the answer is genuinely sampler-specific.** Either (rare) the method *is* the
+  object of study — then pin it and mark unavailable where it doesn't map — or the problem
+  is ill-posed → respec/retire.
+
+**Consistency rule:** method-pinned-ness is a property of the **problem**, applied
+uniformly across languages — a problem is determinate-for-all or pinned-for-all, never
+gen-available/pyro-unavailable on the *same* problem. (Availability can still differ per
+language for an *idiomatic-expressibility* reason — but that is decided empirically by
+attempting the translation, not read off the query.)
+
+**Applied to the 4 inference-algorithms (the resolution).** Their queries used to pin
+"MCMC 10000 lag 10" / "MH 1000 lag 100" / "HMC leapfrog 10 step 0.5" / "rejection 1000."
+Convergent-agreement holds — Gen's rejection matched the WebPPL-MCMC GT within floor →
+**determinate**. So (1) the sampler prescription was **stripped from all four queries**
+(they now name only the posterior; the thin `|crossSection|<0.01` band conveys the
+inherent difficulty, in `given`); (2) **Pyro was authored via vectorized rejection**
+(`dist.Normal/Uniform(...).sample((N,))` + band mask, mirroring Gen's raw-draw rejection
+— genuine inference, not a handroll: delete the draws and no answer remains), clearing
+the multi-seed floor 5/5. The earlier Pyro-unavailable reasoning had only tried
+NUTS/HMC (no gradient init on the thin manifold) and Python-loop `Importance` (times out
+at the ~5e-5 accept rate); it never tried torch-vectorized rejection, which draws tens of
+millions of candidates in seconds. Same method Gen uses → parity, not a lowered bar.
 
 **Mechanism (implemented).** A realization record may be `{problem_id, language,
 available: false, reason}` (no `code`). `eval.corpus.is_available` /
 `load_unavailable` expose it, `load_corpus` excludes it from the executable corpus,
 and `gate crosscheck` / `answers` fold unavailable rows into their reports as
-`status: "unavailable"`. Coverage reads as available/total per language (Pyro
-111/115). The web browser shows the "unavailable — <reason>" note where a
-realization is absent.
+`status: "unavailable"`. Coverage reads as available/total per language (currently
+all columns full: Pyro 144/144 textbook). The web browser shows the "unavailable —
+<reason>" note where a realization is absent.
 
 **Decide availability empirically, never by a statement pre-scan.** A scan of
 statements for method-pinned queries OVER-FLAGS: it cannot distinguish a determinate
@@ -646,3 +675,103 @@ Append-only, dated. The point of this doc — keep adding.
   identical — stating it WOULD be leakage). Real signal in the same pass: unused data
   columns embedded in bundles, and conceptual→field-name bridges (intercept→beta[1]).
   Triage agent findings against the contract; don't cave to "major" volume. (§7a, §5)
+- **2026-07-07** — forestdb corpus mining (webppl source pages → 30 new problems, 29→59).
+  Route: triage source `.md` pages for KEEP/DROP (dedup vs existing corpus + across batches),
+  then author one problem each (self-contained WebPPL GT binding `ANSWER` + statement per the
+  determination criterion + spec), merge via `scripts/build_problems`, gate (`phaseA` floor +
+  `answers`). Cross-batch family dedup is the coordinator's job (no single triage agent sees the
+  whole corpus): capped generics 9→3, politeness 4→2, dropped param-variants. **WebPPL GT
+  authoring gotchas paid for here (recurring across ~every source page):**
+  (1) `var` is NOT hoisted — a function body may only reference names declared ABOVE it;
+  (2) mutual recursion across separate `var`s (classic recursive RSA speaker↔utility↔pragmaticListener)
+  needs `dp.cache` (webppl-dp, loaded by the executor), NOT builtin `cache` — "modernizing"
+  `dp.cache`→`cache` BREAKS it; (3) cached RSA levels + single-expression prior/meaning fns need an
+  explicit `return` (`cache(function(){ Infer(...) })` returns undefined → crashes downstream `.score()`);
+  (4) legacy API: `Enumerate(fn)`→`Infer({method:'enumerate',model:fn})`, `.score([],x)`→`.score(x)`,
+  `binomialERP.score([θ,n],x)`→`Binomial({n,p:θ}).score(x)`, lodash `_.object`→`_.fromPairs`,
+  `_.pairs`→`_.toPairs`, `_.pluck`→`_.map(coll,'p')`; `and(...)` is not a builtin → `&&`.
+  `node --check` catches NONE of these (runtime scope/return errors) — the GT-execution gate does.
+  **Gate earned its keep:** dropped `multi-agent-lda` as ill_posed (LDA label-switching → the query
+  P(group1) is non-identifiable, floor 0.55; even a label-invariant min(p,1-p) stayed too diffuse —
+  not gamed in). **Respec to preserve the phenomenon:** `generics-conjunction`'s joint over
+  (Asia-,Africa-prevalence) is the documented point (anti-correlation) — kept as a `dist/finite` over a
+  structured `{asiaPrevalence:real, africaPrevalence:real}` label (`_LABEL_FIELD_DOMAINS` allows real),
+  NOT 4 independent marginals which would discard the correlation. Authoring agents CAN self-pre-check
+  by calling `eval.executor.execute_webppl` — the ones that did bounced far less.
+- **2026-07-07** — forestdb-30 Pyro + Gen columns (translate WebPPL GT → both, 30 each). All 60
+  validated on-box vs a multi-seed WebPPL reference (`eval/gen_validate.py --language pyro|gen`,
+  laptop stays clean): exact RSA matched to **machine precision** (d~1e-16, tol 1e-9), the 3
+  sampling models within their measured floors. Idiomaticity audited (real per-level
+  `config_enumerate`+`compute_marginals` / `enumerative_inference`+`__pplgym_factor`; simplifications
+  are proven-exact algebraic collapses or post-processing of a real marginal, never handrolled
+  tables). **The box crosscheck earned its keep — it caught 4 real bugs a self-"it runs" check
+  missed**, all found because the numbers differed from the frozen WebPPL GT:
+  - **Pyro `to_event(1)` on a discrete site DEFEATS `config_enumerate` joint enumeration** (silent
+    fallback to a single MC draw → plausible-but-wrong numbers). Use per-element named sites.
+  - **Pyro `config_enumerate`/`compute_marginals` throws AssertionError on a size-1 Categorical** →
+    special-case a point mass (Bayes is a no-op with one hypothesis).
+  - **RSA memoization must key by EVERY arg that changes the result.** A speaker/L0 cache keyed only
+    by (utterance)/(world) but NOT the regime/prior collides across regimes → the second regime
+    silently reuses the first's listener (wonkyworlds: P(wonky) 0.877 vs 0.65). Key by (utterance, regime).
+  - **"sample from an already-normalized Infer" ≠ "reweight in place".** WebPPL `sample(Infer(u,obs))`
+    is separately normalized per (u,obs); flattening all branches into ONE joint enumeration wrongly
+    lets each branch's own likelihood reweight the branch *choice*. Compute each branch's posterior
+    with a separate `compute_marginals`, then mix by prior weights only.
+  - **Boundary-sensitive discretized-Beta priors: replicate WebPPL's exact `_.range` float
+    accumulation** (its last bin lands at 0.9999999999999999, not 1.0; a `(1-x)^ε` weight is 0 at 1.0
+    but ~0.16 there). A clean `linspace` silently zeroes a bin and blows up the posterior.
+  - **Translate the source formula literally, not your mental model.** Real slips caught: a stray
+    apples-haver in negatron's size-3 context (copy-paste from size-2; the formula is nWithApples=3-n
+    → 0 at n=3), and a conjunction meaning formula `1-(p_a·p_b)` where WebPPL means `(1-p_a)·(1-p_b)`.
+  `node --check` / "execute_pyro succeeds" catch NONE of these — only a numeric crosscheck against the
+  reference does. Authoring agents that self-verified vs `execute_webppl` caught their own bugs; those
+  that only ran `execute_pyro` shipped wrong-but-runnable code that the box gate then caught.
+- **2026-07-07** — thorough QC pass (adversarial statements + full idiomaticity) over all 59
+  forestdb + the new Gen column + posteriordb. **Cross-language numeric agreement is necessary but
+  NOT sufficient** — an agent can compute the right posterior BY HAND and pass a machine-precision
+  crosscheck while faking the inference. This pass caught **7 Gen handrolls** (conventions,
+  generics-intergenerational, generics-extensional, social-utility, ccgn-metaphor, hlms, and
+  probmods2 social-cognition/ex2.2) plus **6 forestdb statement bugs** (L0-uniform-vs-weighted-prior
+  ×2, missing 1/N answer-reweighting, cost mislabeling, state-from-fixed-subordinate, independent-vs-
+  state-conditional prior), all of which had passed validation. Statement bugs: the realization was
+  faithful to its GT, the STATEMENT text was wrong — only adversarial statement-vs-GT reading finds these.
+  - **Triage pipeline (`eval/idiom_triage.py`) — don't brute-force LLM-read every realization.** The
+    reliable handroll signal is *realization inference-calls < the WebPPL GT's inference levels* → a
+    level was faked. Validated against all known handrolls (caught) + known-clean RSA (cleared). It's a
+    PRE-FILTER, not a verdict: it over-flags legit patterns (staged RSA reuses one Gen function across
+    levels; pyro `plate`/`SMCFilter`/`infer_discrete`/loop-called models use fewer call *strings* than
+    levels; rejection replaces an Infer with a draw+filter loop) and can't see partial handrolls below
+    a threshold — the LLM read confirms. It narrowed ~286 realizations to ~14 reads → 7 real handrolls.
+  - **The "sample-from-a-normalized-Infer ≠ reweight-in-place" trap (again, ex2.2).** WebPPL's
+    `montyAvoidBoth` is a nested Infer normalized per (alice,prize) — the valid-door count varies
+    (1 if alice≠prize, 2 if ==), so folding both exclusions into ONE outer enumeration reweights
+    (alice,prize) and gives the wrong answer (d=0.167). The fix stages the nested level as its own real
+    `enumerative_inference` (normalized per args) whose result the outer model samples — the same fold
+    IS valid for `montyAvoidAlice` (excludes on one var → constant valid count). A suggested fix from an
+    LLM audit was wrong here; the on-box crosscheck caught it. Always revalidate a fix, don't trust it.
+  - Posteriordb statements clean: priors stated, non-centered reparam auxiliaries (`*_raw`/`*_tilde`/
+    `*_trans`) correctly omitted (program detail, answer-invariant), `X ~ Normal(a,b)` is stat notation
+    not code leakage. Stan realizations are source-native model specs — no handroll axis.
+- **2026-07-07** — *Sampler prescription is a spec choice; availability is decided
+  empirically, per language.* The 4 `inference-algorithms` demos had "run MCMC/MH/HMC/
+  rejection with N samples…" IN THE QUERY, which made them *look* method-pinned and left
+  Pyro marked unavailable. Two separable fixes: (1) **spec** — the posterior is
+  determinate (convergent-agreement: Gen rejection matched the WebPPL-MCMC GT within
+  floor), so the sampler prescription is spurious over-specification → stripped from all
+  four queries (name the quantity, not the program); ex1.2's `given` also mislabeled the
+  prior Gaussian as a "proposal distribution" (MCMC framing) → corrected to prior. (2)
+  **availability** — Pyro *can* realize all four, via **torch-vectorized rejection**
+  (`dist.Normal/Uniform(...).sample((N,))` + hard-band mask), the exact method Gen uses;
+  it clears the multi-seed floor 5/5 (d≪tol). The prior "Pyro-unavailable" call had only
+  tried NUTS/HMC (no gradient init on the thin manifold) and Python-loop `Importance`
+  (times out at the ~5e-5 accept rate) — it never tried vectorized rejection, which draws
+  tens of millions of candidates per second. Lesson: don't read availability off a
+  statement that over-specifies the method, and don't stop at the inference idioms that
+  fail — the blessed rejection method ports across languages. Corpus now has **0
+  unavailable rows** anywhere. (§ Per-language availability)
+- **2026-07-07** — *Data-derived tests over hardcoded sets.* `test_availability.py`
+  hardcoded the 4 inference-algorithms as the pyro-unavailable set; making them available
+  broke two asserts. Rewrote the invariants to derive the unavailable set from the data
+  (corpus-excludes-unavailable, count-matches-available, unavailable-records-wellformed),
+  parametrized over all 5 languages — they hold for any set incl. empty and never rebreak
+  as the columns evolve. A test that pins a specific corpus census is a maintenance trap.
