@@ -437,6 +437,15 @@ where a second column exists). No gate shortcuts at scale — the gate IS the pr
   webppl "missing return" extraction artifacts to the statement semantics, GT-verified). Batch 2 (9)
   authoring. **Gen column = 57 (38 probmods + 19 forestdb).** Confirms Gen is the natural language for
   the RSA/pragmatics corpus. Committed d6fa8e5 (35) + this milestone.
+- **forestdb RSA COMPLETE: 29/29.** All 3 subagent batches + blm + the last 2 (singh-uyeda-pronouns,
+  social-meaning, authored by me) validated exact on-box. Notable: kachakeche/hlms comparison-class
+  (30³/18³ grids — hlms used closed-form softmax inside @gen for the 11664-combo grid, mathematically
+  identical + passes), keysar (soft finite weights, GT has 1e-131 residual), 4-level scope chains,
+  metaphor/irony/teasing/generics/scalar-implicature. **Gen column = 67 (38 probmods2 + 29 forestdb),
+  every realization on-box-validated exact vs webppl GT.** Gen is now the realized language for the
+  entire RSA/pragmatics corpus — the cross-translation audit's "27 HARD-for-Stan RSA" cluster.
+  Remaining Gen frontier: ~16 probmods continuous-latent (V2 sampling regime) + dippl (16) + the
+  4 method-pinned (unavailable). 100 tests pass.
 - **error-tag → web/HF wired + backfilled** (from earlier this session): export carries error+error_tag,
   browser shows [tag], web_rollouts backfilled (all 2712 matrix exec_errors tagged; real classes
   recovered on LAPTOP — the box re-exec was invalid, lacked node/webppl + wrong venv path). triage
