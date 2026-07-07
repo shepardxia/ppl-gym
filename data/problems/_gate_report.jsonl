@@ -85,7 +85,6 @@
 {"problem_id": "probmods2-bayesian-data-analysis/ex1.2", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.0364, "metric": "w1", "runtime_sec": 1.199}
 {"problem_id": "probmods2-conditional-dependence/ex1.a", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.0, "metric": "record", "runtime_sec": 0.899}
 {"problem_id": "probmods2-conditional-dependence/ex1.b", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.0, "metric": "record", "runtime_sec": 0.904}
-{"problem_id": "probmods2-conditioning/ex1.a", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.0, "metric": "absdiff", "runtime_sec": 0.839}
 {"problem_id": "probmods2-conditioning/ex1.b", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.0, "metric": "tv", "runtime_sec": 0.853}
 {"problem_id": "probmods2-conditioning/ex1.c", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.0, "metric": "tv", "runtime_sec": 0.845}
 {"problem_id": "probmods2-conditioning/ex1.d", "status": "ok", "k": 5, "n_runs": 5, "floor": 0.0, "metric": "tv", "runtime_sec": 0.853}

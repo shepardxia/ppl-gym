@@ -36,11 +36,16 @@ tolerance — and must NOT be able to reconstruct the GT program's structure fro
   vectors, tables) are stated as data, e.g. fenced blocks of values.
 - **model** — the generative story in prose/notation. FORBIDDEN: function names,
   decomposition, helper structure, `mem`/`cache` directives, variable names from the
-  code, inference method (exception under `query`).
-- **query** — the quantity or distribution requested. If and only if the answer is a
-  *realized empirical* result (MCMC/forward samples where the output depends on the
-  method and sample count), pin method and counts here — semantically ("MCMC, 500
-  samples, with a drift kernel of width 0.1 on X"), never as API calls.
+  code, inference method.
+- **query** — the quantity or distribution requested (a posterior, marginal,
+  expectation, or exact value). Name the *quantity*, never the inference method or
+  sample count: for a **determinate** target — nearly all of them — the method is
+  immaterial (the measured tolerance absorbs estimator noise, and `answer_spec` already
+  encodes exact-vs-sampled). Pin a method ONLY when the target is genuinely
+  method-dependent — the rare case where the inference procedure *is* the object of
+  study and different correct methods would disagree (a truncated enumeration under a
+  fixed execution budget, a comparison of exploration strategies). See the
+  sampler-prescription principle in `data/REALIZATIONS.md` (§Per-language availability).
 
 Hard bans anywhere in the statement: code blocks copied from the GT, `var `/`ANSWER`/
 `Infer(`/WebPPL API names, serializer internals (`__kind`, probs/support dicts).
@@ -62,8 +67,13 @@ Rules added after the calibration round (each one a real failure that occurred):
   in the ANSWER binding), not a statement instruction.
 - **Internal consistency.** No sentence may contradict another ("draws uniformly"
   followed by non-uniform probabilities).
-- **Inference details only in `query`.** A drift-kernel width or sample count in
-  `given`'s prior description is misplacement even if `query` repeats it.
+- **Inference details don't belong in the statement.** Method names + settings (MCMC,
+  HMC leapfrog steps, forward-sampling N, drift-kernel width, "computed by exact
+  enumeration") are *program* details; for a determinate target they change nothing the
+  solver must hit, so they appear nowhere — not `given`, `model`, or `query`. The only
+  exception is a genuinely method-pinned target, whose load-bearing parameter (a
+  truncated-enumeration execution budget, an exploration strategy) is stated in `query`.
+  (2026-07-07 sweep: stripped 32 determinate problems; kept 3 truncated-enum/strategy.)
 - **State soft-conditioning semantics exactly.** "Prefers utterances the listener
   would interpret correctly" underdetermines a speaker; say "chooses utterances with
   probability proportional to the literal listener's probability of the intended

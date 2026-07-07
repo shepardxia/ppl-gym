@@ -775,3 +775,34 @@ Append-only, dated. The point of this doc — keep adding.
   (corpus-excludes-unavailable, count-matches-available, unavailable-records-wellformed),
   parametrized over all 5 languages — they hold for any set incl. empty and never rebreak
   as the columns evolve. A test that pins a specific corpus census is a maintenance trap.
+- **2026-07-07** — *QC pass over the never-LLM-audited corpora (probmods2 70, dippl 16,
+  posteriordb 75).* forestdb had had the adversarial statement + idiomaticity audit;
+  these hadn't. An 8-agent sonnet audit (both axes) + mechanical sweeps surfaced, and
+  on-box re-execution confirmed, several classes:
+  - **Realization correctness bugs that passed the numeric gate.** (1) 4 Gen
+    draws-protocol realizations (`generative-models` ex1.c/2.b/2.c/7.a) wrapped
+    `enumerative_inference` (returns a distribution) where the harness needs single
+    per-seed draws → `AlgebraError` under standard scoring; they "passed" only via
+    `gen_validate`'s bespoke per-seed loop (which never pools draws). They had **no
+    stored gen answer** — the tell. Fixed to single-draw + `PPLGYM_SAMPLE`. (2) 3 Pyro
+    obs-sequence realizations used `Dirichlet(ones*10)` — but WebPPL `dirichletDrift`'s
+    concentration is the MH *drift-kernel* width, prior is `Dirichlet(ones)`; the pyro
+    column was internally inconsistent (4 right, 3 wrong) and the wrong ones passed on a
+    wide floor (ex2.a d 0.129→0.068 after the fix). (3) `observing-sequences/ex3.a` pyro
+    *hard-conditioned* the POS chain where WebPPL uses a *soft* factor exp(5) on the full
+    sentence — a different, over-concentrated target, masked by a 0.48 floor;
+    reimplemented faithful. Lesson: cross-language numeric agreement within a *wide* floor
+    hides a mis-specified model; read the realization against the GT's actual semantics,
+    and a missing stored answer means the standard scoring path never ran.
+  - **A vacuous problem** (`conditioning/ex1.a`: "fair coin 0.5" → "P(heads)" read off
+    the given) retired, keysar-class. Corpus 219→218.
+  - **Statement leaks** (decomposition, geometric-family naming, under-determined
+    proposal, telescoping-cancellation derivation, `onlyMAP:false`/`ones([N,1])` API
+    syntax) fixed individually.
+  - **Sampler-prescription sweep.** 38 method-namings across the corpus. Stripped 32
+    determinate ones (method immaterial → belongs nowhere in the statement); kept 3
+    genuinely method-pinned (dippl truncated-enumeration budget + exploration-strategy
+    comparison — convergent-agreement fails, the method IS the answer). Authoring-brief
+    convention updated. Strip delegated to sonnet agents returning JSON edits (no file
+    races); verified each was a pure deletion (no added content words) before merging;
+    reworded ones redone by hand. (§Per-language availability)
