@@ -446,6 +446,13 @@ where a second column exists). No gate shortcuts at scale — the gate IS the pr
   entire RSA/pragmatics corpus — the cross-translation audit's "27 HARD-for-Stan RSA" cluster.
   Remaining Gen frontier: ~16 probmods continuous-latent (V2 sampling regime) + dippl (16) + the
   4 method-pinned (unavailable). 100 tests pass.
+- **dippl DONE (13/16 discrete).** 2 subagents authored the 14 discrete; on-box validated exact.
+  1 UNBOUNDED-SKIP (02-webppl geometric — flip-until-success, GT is webppl maxExecutions:20
+  truncation-leakage, not clean enumeration → genuinely non-enumerable). 1 nice catch: PCFG
+  04-factorseq/atom-2 looked unbounded but recursion past depth-1 is provably zero-weight (2nd token
+  must be an adjective, never "John") → bounded, authored, PASSED. Covers HMMs/factor-seq/enumeration/
+  deterministic-CPS-factorial. 2 gaussian (particlefilter atom-2/3) deferred to V2.
+  **Gen column = 80 (38 probmods2 + 29 forestdb + 13 dippl), all on-box-validated exact.**
 - **error-tag → web/HF wired + backfilled** (from earlier this session): export carries error+error_tag,
   browser shows [tag], web_rollouts backfilled (all 2712 matrix exec_errors tagged; real classes
   recovered on LAPTOP — the box re-exec was invalid, lacked node/webppl + wrong venv path). triage
