@@ -29,6 +29,7 @@ from pathlib import Path
 
 from eval.config import DEFAULT_SEED
 from eval.error_tags import classify, is_collapsed
+from eval.io import load_jsonl, write_jsonl
 
 
 def _reexec(language: str, code: str, gt_bundle: str | None, timeout: int) -> tuple[str, str]:
@@ -135,7 +136,7 @@ def run(dirs_glob: str, out_path: Path, *, per_cell: int, timeout: int, workers:
         out = {k: v for k, v in j.items() if not k.startswith("_")}
         # Recovered reason replaces the collapsed placeholder; classify with the
         # SAME function score.py uses -> identical `error` + `error_tag` schema.
-        out.update(sampled=True, real_error=real, stderr_head=stderr,
+        out.update(sampled=True, stderr_head=stderr,
                    error=real, error_tag=classify(real, j["language"]),
                    code=j["_code"][:6000])
         return out
@@ -169,7 +170,7 @@ def apply_to_scored(scored_files: list[str], rows: list[dict]) -> None:
     n_rows = n_files = 0
     for f in scored_files:
         cell = Path(f).parent.name
-        srows = [json.loads(ln) for ln in open(f) if ln.strip()]
+        srows = load_jsonl(f)
         changed = False
         for sr in srows:
             if sr.get("summary") or sr.get("status") != "exec_error":
@@ -180,9 +181,7 @@ def apply_to_scored(scored_files: list[str], rows: list[dict]) -> None:
                 changed = True
                 n_rows += 1
         if changed:
-            with open(f, "w") as fh:
-                for sr in srows:
-                    fh.write(json.dumps(sr) + "\n")
+            write_jsonl(f, srows)
             n_files += 1
     print(f"[triage] applied error_tag to {n_rows} exec_error rows "
           f"across {n_files} files", flush=True)

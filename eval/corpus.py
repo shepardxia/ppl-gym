@@ -33,10 +33,13 @@ BATCH_EXECUTORS = {
 
 
 def batch_executor_for(language: str):
-    """Return execute_batch(code, seeds, timeout, workers) -> list for a language.
+    """Return execute_batch(code, seeds, timeout, workers) -> (answers, errors).
 
     Contract (uniform across languages):
-      - Returns a list aligned with ``seeds``; a failed seed is ``None``.
+      - Returns ``(answers, errors)``, both aligned with ``seeds``: ``answers[i]``
+        is the parsed answer or ``None`` for a failed seed; ``errors[i]`` is that
+        seed's real failure reason (``None`` on success), so callers surface the
+        actual cause instead of a generic count.
       - A whole-run failure (nothing executed: compile error, subprocess death,
         every unit failed) raises RuntimeError carrying the REAL reason —
         never a generic message.

@@ -35,6 +35,13 @@ _ROLLOUT_COLS = [
 ]
 
 
+def _error_tag(error, existing_tag, lang):
+    """The row's error_tag, deriving it from the real error for legacy rows that
+    predate error_tag (collapsed rows classify to "other"). One source for both
+    the HF and web builders."""
+    return existing_tag or (classify(error, lang) if error else None)
+
+
 def _gt_broken_by_lang(scored_files: list[str]) -> dict[str, set[str]]:
     """problem_ids whose ground truth failed to collect, per language."""
     out: dict[str, set[str]] = {}
@@ -64,10 +71,7 @@ def build_rollouts(runs_dir: Path) -> list[dict]:
             if r.get("summary") or not r.get("problem_id"):
                 continue
             row = {c: r.get(c) for c in _ROLLOUT_COLS}
-            # Legacy scored rows predate error_tag; derive it from the real error
-            # so HF rollouts carry a tag. Collapsed rows classify to "other".
-            if row.get("error") and not row.get("error_tag"):
-                row["error_tag"] = classify(row["error"], lang)
+            row["error_tag"] = _error_tag(row.get("error"), row.get("error_tag"), lang)
             row["gt_unscorable"] = r["problem_id"] in gt_broken.get(lang, set())
             rows.append(row)
     return rows
@@ -108,8 +112,7 @@ def build_web_rollouts(runs_dir: Path, keep_langs: set[str] = _WEB_LANGS) -> lis
                 "problem_id": r["problem_id"], "model": model, "language": lang,
                 "code": r["code"], "status": r.get("status"),
                 "distance": r.get("distance"), "error": r.get("error"),
-                "error_tag": r.get("error_tag")
-                or (classify(r.get("error"), lang) if r.get("error") else None),
+                "error_tag": _error_tag(r.get("error"), r.get("error_tag"), lang),
                 "slot": r.get("slot", 0),
             }
             cur = best.get(key)

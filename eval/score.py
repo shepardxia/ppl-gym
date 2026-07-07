@@ -5,7 +5,8 @@ All other fields are preserved in the output row.
 
 Output row schema:
   {<original fields>, "status", "distance", "tol", "floor", "metric",
-   "ill_posed", "error" (when present), "code_jaccard", "runtime_sec"}
+   "ill_posed", "error" + "error_tag" (when a failure, tagged by eval.error_tags),
+   "code_jaccard", "runtime_sec"}
 
 Final summary line:
   {"summary": true, "n": <int>, "pass": <int>, "fail": <int>,

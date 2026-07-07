@@ -48,9 +48,7 @@ def classify(error: str | None, language: str = "") -> str:
     """Map a real failure reason to one stable tag. Language is advisory."""
     e = (error or "").strip()
     el = e.lower()
-    if not e:
-        return "other"
-    if _COLLAPSED.match(el):
+    if not e or is_collapsed(e):
         return "other"
     if "gt collection failed" in el:
         return "gt_side"
@@ -62,13 +60,12 @@ def classify(error: str | None, language: str = "") -> str:
         return "timeout"
     # Compile / parse failures: Stan compiler messages + Python SyntaxError.
     if ("compile" in el or "syntax error" in el or "semantic error" in el
-            or "parsing error" in el or el.startswith("syntaxerror")
-            or "syntaxerror:" in el or "indentationerror" in el):
+            or "parsing error" in el or "syntaxerror" in el
+            or "indentationerror" in el):
         return "compile"
     if ("did not define answer" in el or "produced no output" in el
-            or "no valid json" in el or "not valid json" in el
-            or "non-json output" in el or "no error_message" in el
-            or "wrong number of results" in el):
+            or "not valid json" in el or "non-json output" in el
+            or "no error_message" in el or "wrong number of results" in el):
         return "no_output"
     return "runtime"
 

@@ -22,12 +22,12 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 import tempfile
 from pathlib import Path
 
-from eval.exec_common import ExecutionResult, loads_lenient
+from eval.error_tags import join_reasons
+from eval.exec_common import ExecutionResult, loads_lenient, run_per_seed, strip_ansi
 
 
 def _julia_bin() -> str:
@@ -114,7 +114,7 @@ def _program(code: str, seed: int) -> str:
 
 
 def _extract_error(text: str) -> str:
-    text = re.sub(r"\x1b\[[0-9;]*m", "", text or "")
+    text = strip_ansi(text)
     # Julia prints `ERROR: <message>` before the stacktrace; that line is the cause.
     for line in text.split("\n"):
         s = line.strip()
@@ -191,20 +191,11 @@ def execute_gen_batch(code: str, seeds, timeout: int = 60, workers: int = 1):
     if not seeds:
         return [], []
     if _SAMPLE_MARKER in code:
-        from concurrent.futures import ThreadPoolExecutor
-        answers: list = [None] * len(seeds)
-        errors: list = [None] * len(seeds)
-        with ThreadPoolExecutor(max_workers=max(1, min(workers, len(seeds)))) as pool:
-            futs = {pool.submit(execute_gen, code, timeout=timeout, random_seed=s): i
-                    for i, s in enumerate(seeds)}
-            for fut, i in futs.items():
-                r = fut.result()
-                if r.success:
-                    answers[i] = r.answer
-                else:
-                    errors[i] = r.error_message or "gen execution failed"
+        answers, errors = run_per_seed(
+            lambda s: execute_gen(code, timeout=timeout, random_seed=s),
+            seeds, workers=workers, default_error="gen execution failed")
         if all(a is None for a in answers):
-            raise RuntimeError(next((e for e in errors if e), "gen execution failed"))
+            raise RuntimeError(join_reasons(errors))
         return answers, errors
     r = execute_gen(code, timeout=timeout, random_seed=seeds[0])
     if not r.success:

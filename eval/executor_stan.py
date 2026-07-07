@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from pathlib import Path
 
+from eval.error_tags import join_reasons
 from eval.stan_bundle import unpack
 
 # cmdstanpy is chatty (per-chain INFO); quiet it so executor output stays clean.
@@ -154,7 +155,7 @@ def execute_stan_batch(code: str, seeds, timeout: int, workers: int):
         answers = [a for a, _ in pairs]
         errors = [e for _, e in pairs]
         if all(a is None for a in answers):
-            # Every fit failed: surface the real reason (mirrors the pyro batch
+            # Every fit failed: surface the real reason(s) (mirrors the pyro batch
             # contract) instead of the generic "execution failed" downstream.
-            raise RuntimeError(next((e for e in errors if e), "execution failed"))
+            raise RuntimeError(join_reasons(errors))
         return answers, errors

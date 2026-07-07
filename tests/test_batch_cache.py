@@ -13,7 +13,8 @@ def test_batch_determinism_same_seed():
 
 def test_batch_different_seeds_differ():
     code = "ANSWER = pyro.sample('x', dist.Normal(0., 1.)).item()"
-    (a, b), _ = execute_pyro_batch(code, [1, 2], timeout=60)
+    answers, _ = execute_pyro_batch(code, [1, 2], timeout=60)
+    a, b = answers
     assert a != b
 
 

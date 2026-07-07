@@ -26,7 +26,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from eval.exec_common import ExecutionResult, loads_lenient
+from eval.exec_common import ExecutionResult, loads_lenient, run_per_seed, strip_ansi
 
 
 # Header injected before user code. Defines `__serialize(x)`. The trailer
@@ -184,29 +184,13 @@ def execute_webppl_batch(code: str, seeds, timeout: int = 30, workers: int = 8):
     ``workers`` threads. The amortization win for fixed reference GTs comes from
     caching (eval/gt_cache), not from batching webppl.
     """
-    from concurrent.futures import ThreadPoolExecutor
-
-    seeds = list(seeds)
-    if not seeds:
-        return [], []
-    results: list = [None] * len(seeds)
-    errors: list = [None] * len(seeds)
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        futs = {
-            pool.submit(execute_webppl, code, timeout=timeout, random_seed=s): i
-            for i, s in enumerate(seeds)
-        }
-        for fut, i in futs.items():
-            r = fut.result()
-            if r.success:
-                results[i] = r.answer
-            else:
-                errors[i] = r.error_message or "execution failed"
-    return results, errors
+    return run_per_seed(
+        lambda s: execute_webppl(code, timeout=timeout, random_seed=s),
+        seeds, workers=workers)
 
 
 def _extract_error(text: str) -> str:
-    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    text = strip_ansi(text)
     for line in text.split("\n"):
         line = line.strip()
         if line and any(

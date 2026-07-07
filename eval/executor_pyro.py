@@ -34,7 +34,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from eval.exec_common import ExecutionResult, loads_lenient
+from eval.exec_common import ExecutionResult, loads_lenient, strip_ansi
 
 
 # Path to the project venv's python (so subprocess sees pyro/torch).
@@ -445,7 +445,7 @@ def _run_pyro_chunk(code: str, seeds: list, timeout: int) -> list:
 
 
 def _extract_error(text: str) -> str:
-    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    text = strip_ansi(text)
     # Python tracebacks: last "...Error: ..." line is the cause.
     for line in reversed(text.split("\n")):
         line = line.strip()
