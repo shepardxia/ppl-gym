@@ -18,10 +18,13 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "data" / "prompts"
 WEBPPL_SYSTEM_BASE = (_PROMPTS_DIR / "webppl_system_base.txt").read_text().rstrip("\n")
 PYRO_SYSTEM_BASE = (_PROMPTS_DIR / "pyro_system_base.txt").read_text().rstrip("\n")
 STAN_SYSTEM_BASE = (_PROMPTS_DIR / "stan_system_base.txt").read_text().rstrip("\n")
+GEN_SYSTEM_BASE = (_PROMPTS_DIR / "gen_system_base.txt").read_text().rstrip("\n")
 WEBPPL_PRIMER = (_PROMPTS_DIR / "webppl_primer.txt").read_text().rstrip("\n")
 PYRO_PRIMER = (_PROMPTS_DIR / "pyro_primer.txt").read_text().rstrip("\n")
+GEN_PRIMER = (_PROMPTS_DIR / "gen_primer.txt").read_text().rstrip("\n")
 
-_SYSTEM_BASE = {"webppl": WEBPPL_SYSTEM_BASE, "pyro": PYRO_SYSTEM_BASE, "stan": STAN_SYSTEM_BASE}
+_SYSTEM_BASE = {"webppl": WEBPPL_SYSTEM_BASE, "pyro": PYRO_SYSTEM_BASE,
+                "stan": STAN_SYSTEM_BASE, "gen": GEN_SYSTEM_BASE}
 
 # Primer = a knob (we also run no-primer). Two variants:
 #   lean    — light API orientation for the rarer-in-pretraining PPLs (Stan is
@@ -29,14 +32,14 @@ _SYSTEM_BASE = {"webppl": WEBPPL_SYSTEM_BASE, "pyro": PYRO_SYSTEM_BASE, "stan": 
 #   verbose — heavier hand-holding (idioms, gotchas) for weaker models.
 def _load_primers(suffix: str) -> dict[str, str]:
     out: dict[str, str] = {}
-    for lang in ("webppl", "pyro", "stan"):
+    for lang in ("webppl", "pyro", "stan", "gen"):
         p = _PROMPTS_DIR / f"{lang}_primer{suffix}.txt"
         if p.exists():
             out[lang] = p.read_text().rstrip("\n")
     return out
 
 
-_PRIMER = {"webppl": WEBPPL_PRIMER, "pyro": PYRO_PRIMER}
+_PRIMER = {"webppl": WEBPPL_PRIMER, "pyro": PYRO_PRIMER, "gen": GEN_PRIMER}
 _PRIMER_VERBOSE = _load_primers(".verbose")
 
 

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 import re
 import time
 from pathlib import Path
@@ -48,16 +49,32 @@ _DEFAULT_N_SOLVERS = 2
 def problem_id_to_cid(problem_id: str, slot: int) -> str:
     """Encode problem_id + slot → custom_id satisfying ^[a-zA-Z0-9_-]{1,64}$.
 
-    Encoding: '/' → '__', '.' → '_dot_'
-    These are invertible and safe: '__' does not appear in raw problem_ids,
-    '_dot_' does not conflict with the slot suffix '__s{n}'.
+    Readable encoding ('/' → '__', '.' → '_dot_') when it fits in 64 chars —
+    invertible and safe ('__' does not appear in raw problem_ids, '_dot_' does
+    not conflict with the slot suffix '__s{n}'). Some posteriordb ids are long
+    enough that the readable form overflows the Anthropic batch 64-char limit;
+    those fall back to a sha1 hash, which is NOT reversible by
+    cid_to_problem_slot — callers that need the mapping build a forward
+    {cid: (pid, slot)} table (eval/benchmark.py does), never reverse-decode.
     """
     safe = problem_id.replace(".", "_dot_").replace("/", "__")
-    return f"{safe}__s{slot}"
+    cid = f"{safe}__s{slot}"
+    if len(cid) <= 64:
+        return cid
+    h = hashlib.sha1(problem_id.encode()).hexdigest()[:24]
+    return f"h_{h}__s{slot}"
 
 
 def cid_to_problem_slot(cid: str) -> tuple[str, int]:
-    """Reverse of problem_id_to_cid."""
+    """Reverse of the readable problem_id_to_cid encoding.
+
+    Hashed cids (long ids, ``h_<24hex>__s{n}``) are not reversible — a caller
+    that submitted them must map back via a forward {cid: (pid, slot)} table.
+    """
+    if re.match(r"^h_[0-9a-f]{24}__s\d+$", cid):
+        raise ValueError(
+            f"hashed custom_id {cid!r} is not reversible; build a forward "
+            "{cid: (problem_id, slot)} map from the submitted problems instead")
     m = re.match(r"^(.+)__s(\d+)$", cid)
     if not m:
         raise ValueError(f"cannot parse custom_id: {cid!r}")

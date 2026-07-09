@@ -92,6 +92,31 @@ _LANG: dict[str, dict[str, str]] = {
         "field_value": "a quantity computed in `generated quantities`",
         "field_value_realvec": "a vector computed in `generated quantities`",
     },
+    "gen": {
+        "value_sentence": "`ANSWER` is the computed value.",
+        "realvec_suffix": "a `Vector` of numbers",
+        "dist_object": (
+            "the distribution: `__pplgym_enum_dist(...)` of an `enumerative_inference` "
+            "result, a `Dict` from each outcome to its probability, or a `Vector` of samples"
+        ),
+        "dist_object_sentence": (
+            "`ANSWER` is the distribution: `__pplgym_enum_dist(...)` of an "
+            "`enumerative_inference` result, a `Dict` from each outcome to its "
+            "probability, or a `Vector` of samples."
+        ),
+        "dist_draws_sentence": (
+            "`ANSWER` is a single sampled draw from the process; the program is run "
+            "repeatedly with different random seeds, each run contributing one draw."
+        ),
+        "record_intro": "`ANSWER` is a `Dict` with exactly these string keys:",
+        "field_dist_object": (
+            "the distribution (`__pplgym_enum_dist(...)`, a `Dict` outcome=>probability, "
+            "or a `Vector` of samples)"
+        ),
+        "field_dist_draws": "a single sampled draw from the process",
+        "field_value": "the computed value",
+        "field_value_realvec": "the computed value (a `Vector` of numbers)",
+    },
 }
 
 
@@ -293,8 +318,8 @@ def render_problem(problem: dict, language: str = "webppl",
     if language not in _LANG:
         raise ValueError(f"unknown language: {language!r}")
     contract = _contract_paragraph(spec, language)
-    # Python solvers need the object-key encoding spelled out (unhashable outcomes).
-    if language == "pyro" and _has_object_labels(spec):
+    # Pyro/Gen solvers need the object-key encoding spelled out (unhashable outcomes).
+    if language in ("pyro", "gen") and _has_object_labels(spec):
         contract = contract + "\n\n" + _OBJECT_LABEL_CLAUSE
 
     parts = []

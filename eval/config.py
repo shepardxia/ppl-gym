@@ -14,6 +14,11 @@ Execution budget policy (single source of truth; executors implement it):
 - A Pyro chunk subprocess covering several seeds gets the per-seed budget x
   its seed count, capped at ``PYRO_CHUNK_BUDGET_CAP`` so a hung many-seed
   draws chunk cannot hold a worker for hours.
+- Gen runs get ``GEN_SEED_BUDGET_SCALE`` x the per-run budget, GT and candidate
+  alike (same fairness invariant). Exact enum realizations finish well inside
+  60s, but a faithful heavy-MCMC cloud built in one run (mixture-models ex2.a =
+  69s idle, worse under executor contention) blows the flat budget; the scaled
+  ceiling never slows a fast run (it is a cap, not a wait).
 """
 
 from __future__ import annotations
@@ -27,6 +32,8 @@ DEFAULT_MC_WORKERS = 8
 
 PYRO_SEED_BUDGET_SCALE = 10
 PYRO_CHUNK_BUDGET_CAP = 3600
+
+GEN_SEED_BUDGET_SCALE = 6
 
 
 def total_exec_workers() -> int:

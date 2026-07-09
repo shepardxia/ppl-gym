@@ -26,6 +26,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from eval.config import GEN_SEED_BUDGET_SCALE
 from eval.error_tags import join_reasons
 from eval.exec_common import ExecutionResult, loads_lenient, run_per_seed, strip_ansi
 
@@ -190,6 +191,10 @@ def execute_gen_batch(code: str, seeds, timeout: int = 60, workers: int = 1):
     seeds = list(seeds)
     if not seeds:
         return [], []
+    # Budget policy (eval.config): the per-run budget is scaled up so a faithful
+    # heavy-MCMC cloud built in one run is not killed; a cap, not a wait, so fast
+    # exact runs are unaffected. Symmetric across GT and candidate (fairness).
+    timeout = timeout * GEN_SEED_BUDGET_SCALE
     if _SAMPLE_MARKER in code:
         answers, errors = run_per_seed(
             lambda s: execute_gen(code, timeout=timeout, random_seed=s),
