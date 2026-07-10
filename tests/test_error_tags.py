@@ -29,9 +29,34 @@ def test_specific_reasons_bucket_correctly():
     assert classify("GT collection failed: execution failed", "stan") == "gt_side"
     assert classify("empty code", "webppl") == "empty_code"
     assert classify("program did not define ANSWER", "pyro") == "no_output"
-    assert classify("Error: cpsInnerStatement is not a function", "webppl") == "runtime"
     assert classify("TypeError: unhashable type: 'list'", "pyro") == "runtime"
     assert classify("problem/realization not found for problem_id='z'", "") == "corpus_miss"
+
+
+def test_webppl_compile_vocabulary_is_compile_not_runtime():
+    # WebPPL fails at compile time with its own vocabulary (no "compile"/"syntax
+    # error" substring). These are parse + CPS/naming transform passes, not
+    # execution — must bucket `compile`, not `runtime`.
+    for msg in (
+        "Error: cpsInnerStatement",
+        "Error: cpsFinalStatement",
+        "Error: can't cps Categorical(...)",
+        "Error: atomize: unrecognized node",
+        "Error: Line 119: Did you mean var ANSWER = ?",
+        "Error: Line 33: Unexpected identifier",
+        "Error: Line 21: Unexpected token ILLEGAL",
+        'Error: "**" does not match field "operator": == | != | ...',
+        "Error: Line 5: You tried to assign to a field of ANSWER, but you can only assign",
+    ):
+        assert classify(msg, "webppl") == "compile", msg
+    # Genuine WebPPL runtime errors stay runtime (dist construction / model logic).
+    for msg in (
+        'Error: Parameter "p" missing from Bernoulli distribution.',
+        "Error: The score argument is not a number.",
+        "Error: All paths explored by Enumerate have probability zero.",
+        "TypeError: address.split is not a function",
+    ):
+        assert classify(msg, "webppl") == "runtime", msg
 
 
 def test_collapsed_placeholders_are_flagged_not_bucketed():

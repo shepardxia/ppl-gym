@@ -34,6 +34,23 @@ TAGS = (
 # "needs re-exec" rather than silently bucketed.
 _COLLAPSED = re.compile(r"^(execution failed|\d+/\d+ seeded runs failed)$", re.I)
 
+# WebPPL fails at compile time (parse + CPS/naming transform passes) with its own
+# vocabulary — no "compile"/"syntax error" substring, so these would otherwise
+# fall through to `runtime`. Markers observed across the matrix: esprima parse
+# ("did you mean", "unexpected token/identifier/number"), the CPS transform
+# ("cpsInnerStatement", "cpsFinalStatement", "can't cps"), the naming pass
+# ("atomize"), and AST-schema rejections (unsupported operator "does not match
+# field", compile-time assignment restriction "you can only assign").
+_WEBPPL_COMPILE = (
+    "cpsinnerstatement", "cpsfinalstatement", "can't cps",
+    "atomize",
+    "did you mean",
+    "unexpected token", "unexpected identifier",
+    "unexpected number", "unexpected string",
+    "does not match field",
+    "you can only assign",
+)
+
 
 def is_collapsed(error: str | None) -> bool:
     """True if ``error`` is a pre-fix placeholder whose real reason was lost.
@@ -58,10 +75,12 @@ def classify(error: str | None, language: str = "") -> str:
         return "corpus_miss"
     if "timeout" in el:
         return "timeout"
-    # Compile / parse failures: Stan compiler messages + Python SyntaxError.
+    # Compile / parse failures: Stan compiler messages, Python SyntaxError,
+    # and WebPPL's own parse/transform-pass vocabulary.
     if ("compile" in el or "syntax error" in el or "semantic error" in el
             or "parsing error" in el or "syntaxerror" in el
-            or "indentationerror" in el):
+            or "indentationerror" in el
+            or any(m in el for m in _WEBPPL_COMPILE)):
         return "compile"
     if ("did not define answer" in el or "produced no output" in el
             or "not valid json" in el or "non-json output" in el
