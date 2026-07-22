@@ -361,8 +361,8 @@ hierarchical *reference* models remain out of scope; the textbook continuous mod
 are all small enough for MH/rejection.
 
 - **Executor** (`eval/executor_gen.py`): a Julia subprocess runs the program; the
-  injected preamble supplies `__pplgym_serialize` (recursive → the algebra wire
-  forms) and `__pplgym_enum_dist(res)` (reduces an `enumerative_inference` result
+  injected preamble supplies `_serialize_answer` (recursive → the algebra wire
+  forms) and `enum_dist(res)` (reduces an `enumerative_inference` result
   to `{__kind:distribution, support, probs}`, aggregating duplicate return values).
   Because exact inference is **deterministic given the code**, `execute_gen_batch`
   runs the program **once and replicates** across seeds — which also amortizes
@@ -372,8 +372,8 @@ are all small enough for MH/rejection.
   Set `PPL_GYM_JULIA` to the julia binary when it is not on PATH. `EXECUTOR_VERSION
   ["gen"]="gen1"`.
 - **Realization contract** (bind a top-level `ANSWER`, like WebPPL/Pyro):
-  - `dist`   → `ANSWER = __pplgym_enum_dist(enumerative_inference(model, args, obs, grid))`.
-  - `record` → `ANSWER = Dict("field" => __pplgym_enum_dist(...), ...)`.
+  - `dist`   → `ANSWER = enum_dist(enumerative_inference(model, args, obs, grid))`.
+  - `record` → `ANSWER = Dict("field" => enum_dist(...), ...)`.
   - dist over **record-valued labels** → the `@gen` returns a `Dict("k"=>v)`; the
     serializer keeps the object as a support element (the mapping form can't — JSON
     keys are strings).
@@ -403,13 +403,13 @@ are all small enough for MH/rejection.
   `Distribution` whose `logpdf` returns its argument, OBSERVED at a dummy value, adds
   that argument to the trace log-weight. This is Gen's own extension mechanism (a
   real `Gen.Distribution` subtype), not a veneer — the faithful translation of
-  WebPPL's `factor()`. Shipped in the executor header as `__pplgym_factor`:
-  `{:pot} ~ __pplgym_factor(w)` + `choicemap((:pot, 0.0))`. Verified exact on
+  WebPPL's `factor()`. Shipped in the executor header as `factor`:
+  `{:pot} ~ factor(w)` + `choicemap((:pot, 0.0))`. Verified exact on
   agents-as-programs ex1.a (`factor(A*3)` → P(true)=0.95257), ex1.b, ex3.
 - **Nested inference (RSA / theory-of-mind) IS available** via **staged composition**:
   compute each level (literal listener L0, speaker S1, ...) as a plain Julia function
   that runs `enumerative_inference` and returns a probability vector; a higher level's
-  `@gen` model consumes the lower level's log-probs through `__pplgym_factor` — no
+  `@gen` model consumes the lower level's log-probs through `factor` — no
   inference-inside-`@gen` (precompute the caches as function args). This is exactly how
   RSA is written in any PPL (WebPPL nests `Infer` in `Infer`). Verified exact: the
   3-level RSA (agents ex4.a, 4 alphas), the 4-level RSA (ex4.b, L1+L3), and the
@@ -443,7 +443,7 @@ are all small enough for MH/rejection.
     **rejection sampling** = forward-draw from the prior, keep draws satisfying the
     condition → the *exact* conditioned posterior, no MH-on-a-thin-band mixing pain. (A
     top-level `while` needs `global` on any reassigned counter — Julia script hard scope.)
-  - **factor / soft condition**: `{:c} ~ __pplgym_factor(w)` + `choicemap((:c, 0.0))`; use
+  - **factor / soft condition**: `{:c} ~ factor(w)` + `choicemap((:c, 0.0))`; use
     true `-Inf` for a hard reject, never a `log(x+ε)` floor.
 - **Method-pinned-looking problems ARE available via rejection — in every language.**
   The **inference-algorithms** chapter (ex1.1/1.2/1.3/2.4) *described* a specific sampler
@@ -702,7 +702,7 @@ Append-only, dated. The point of this doc — keep adding.
   validated on-box vs a multi-seed WebPPL reference (`eval/gen_validate.py --language pyro|gen`,
   laptop stays clean): exact RSA matched to **machine precision** (d~1e-16, tol 1e-9), the 3
   sampling models within their measured floors. Idiomaticity audited (real per-level
-  `config_enumerate`+`compute_marginals` / `enumerative_inference`+`__pplgym_factor`; simplifications
+  `config_enumerate`+`compute_marginals` / `enumerative_inference`+`factor`; simplifications
   are proven-exact algebraic collapses or post-processing of a real marginal, never handrolled
   tables). **The box crosscheck earned its keep — it caught 4 real bugs a self-"it runs" check
   missed**, all found because the numbers differed from the frozen WebPPL GT:

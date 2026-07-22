@@ -37,11 +37,11 @@ def _julia_bin() -> str:
 
 
 # Injected before user code: JSON, a recursive serializer that turns a Gen ANSWER
-# into the wire shapes eval/algebra.py accepts, and __pplgym_enum_dist — the
+# into the wire shapes eval/algebra.py accepts, and enum_dist — the
 # helper that reduces an enumerative_inference result into a distribution.
 #
 # ANSWER contract (bind a top-level ANSWER, like the WebPPL/Pyro executors):
-#   dist   → __pplgym_enum_dist(enumerative_inference(...))  (a {__kind:distribution,
+#   dist   → enum_dist(enumerative_inference(...))  (a {__kind:distribution,
 #            support,probs} Dict; support elements may be bool/number/string/record-Dict)
 #   record → a Dict(field_name => dist_or_value)
 #   value  → a Bool/number/string/vector
@@ -49,24 +49,28 @@ def _julia_bin() -> str:
 SERIALIZER_HEADER = r"""
 using Gen, JSON, Random
 
-# Soft factor / unnormalized potential. Gen's @gen DSL has no `factor`, but a
-# custom Distribution whose logpdf returns its argument, OBSERVED at a dummy
-# value, adds that argument to the trace log-weight — Gen's own extension
-# mechanism, the faithful translation of WebPPL's factor()/Pyro's pyro.factor.
-# Usage in a realization:  {:pot} ~ __pplgym_factor(w)  + choicemap((:pot, 0.0)).
-struct __PplgymFactor <: Gen.Distribution{Float64} end
-const __pplgym_factor = __PplgymFactor()
-(::__PplgymFactor)(w::Real) = 0.0
-Gen.random(::__PplgymFactor, w::Real) = 0.0
-Gen.logpdf(::__PplgymFactor, x::Real, w::Real) = Float64(w)
-Gen.logpdf_grad(::__PplgymFactor, x::Real, w::Real) = (nothing, nothing, nothing)
-Gen.has_output_grad(::__PplgymFactor) = false
-Gen.has_argument_grads(::__PplgymFactor) = (false,)
-Gen.is_discrete(::__PplgymFactor) = true
+# Soft factor / unnormalized potential. Gen's @gen DSL has no `factor`, so we
+# supply one the way Gen's own docs prescribe defining a distribution from
+# scratch (gen.dev how_to/custom_distributions): a Distribution subtype
+# implementing the full API (random/logpdf/logpdf_grad/has_*_grad/is_discrete +
+# the callable sugar). Its logpdf returns its argument, so OBSERVING it at a
+# dummy value adds that argument to the trace log-weight — the faithful
+# translation of WebPPL's factor()/Pyro's pyro.factor, read correctly by every
+# inference algorithm (enumeration, mh, importance).
+# Usage in a realization:  {:pot} ~ factor(w)  + choicemap((:pot, 0.0)).
+struct Factor <: Gen.Distribution{Float64} end
+const factor = Factor()
+(::Factor)(w::Real) = 0.0
+Gen.random(::Factor, w::Real) = 0.0
+Gen.logpdf(::Factor, x::Real, w::Real) = Float64(w)
+Gen.logpdf_grad(::Factor, x::Real, w::Real) = (nothing, nothing, nothing)
+Gen.has_output_grad(::Factor) = false
+Gen.has_argument_grads(::Factor) = (false,)
+Gen.is_discrete(::Factor) = true
 
-function __pplgym_serialize(x)
+function _serialize_answer(x)
     if isa(x, AbstractDict)
-        return Dict(string(k) => __pplgym_serialize(v) for (k, v) in x)
+        return Dict(string(k) => _serialize_answer(v) for (k, v) in x)
     elseif isa(x, Bool)
         return x
     elseif isa(x, Integer) || isa(x, AbstractFloat)
@@ -74,18 +78,18 @@ function __pplgym_serialize(x)
     elseif isa(x, AbstractString) || isa(x, Symbol)
         return string(x)
     elseif isa(x, NamedTuple)
-        return Dict(string(k) => __pplgym_serialize(v) for (k, v) in pairs(x))
+        return Dict(string(k) => _serialize_answer(v) for (k, v) in pairs(x))
     elseif isa(x, AbstractVector) || isa(x, Tuple)
-        return [__pplgym_serialize(e) for e in x]
+        return [_serialize_answer(e) for e in x]
     else
-        error("Gen ANSWER has unserializable type $(typeof(x)); reduce it to a distribution (__pplgym_enum_dist), a Dict(field=>...), or a number/bool/string/vector")
+        error("Gen ANSWER has unserializable type $(typeof(x)); reduce it to a distribution (enum_dist), a Dict(field=>...), or a number/bool/string/vector")
     end
 end
 
 # Reduce an enumerative_inference result -> a distribution over the model's return
 # value: {__kind:distribution, support:[values], probs:[weights]}, aggregating
 # duplicate return values. `res` is the (traces, log_norm_weights, lml) tuple.
-function __pplgym_enum_dist(res)
+function enum_dist(res)
     traces, logw = res[1], res[2]
     w = exp.(logw)
     vals = Any[]
@@ -111,7 +115,7 @@ def _program(code: str, seed: int) -> str:
     return (SERIALIZER_HEADER + "\n"
             + "Random.seed!(" + str(int(seed)) + ")\n"
             + code + "\n"
-            + "println(JSON.json(__pplgym_serialize(ANSWER)))\n")
+            + "println(JSON.json(_serialize_answer(ANSWER)))\n")
 
 
 def _extract_error(text: str) -> str:

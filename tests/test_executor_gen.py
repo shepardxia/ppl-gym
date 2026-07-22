@@ -22,10 +22,10 @@ def test_program_structure():
     # The injected preamble + user code + the ANSWER emit line, in order.
     prog = _program("ANSWER = 1", seed=7)
     assert "using Gen, JSON, Random" in prog
-    assert "__pplgym_enum_dist" in SERIALIZER_HEADER  # the enum-dist helper is injected
+    assert "enum_dist" in SERIALIZER_HEADER  # the enum-dist helper is injected
     assert "Random.seed!(7)" in prog
     assert prog.index("using Gen") < prog.index("Random.seed!(7)")  # header before seed
-    assert prog.rstrip().endswith("println(JSON.json(__pplgym_serialize(ANSWER)))")
+    assert prog.rstrip().endswith("println(JSON.json(_serialize_answer(ANSWER)))")
 
 
 def test_empty_seeds():
@@ -45,7 +45,7 @@ def test_coin_matches_webppl_gt():
 end
 obs = choicemap((:f1, true), (:f2, true), (:f3, true))
 grid = choice_vol_grid((:coin, [false, true]))
-ANSWER = __pplgym_enum_dist(enumerative_inference(coin, (), obs, grid))
+ANSWER = enum_dist(enumerative_inference(coin, (), obs, grid))
 '''
     answers, errors = execute_gen_batch(code, [42, 43], timeout=180)
     assert errors == [None, None]

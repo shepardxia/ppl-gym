@@ -96,11 +96,11 @@ _LANG: dict[str, dict[str, str]] = {
         "value_sentence": "`ANSWER` is the computed value.",
         "realvec_suffix": "a `Vector` of numbers",
         "dist_object": (
-            "the distribution: `__pplgym_enum_dist(...)` of an `enumerative_inference` "
+            "the distribution: `enum_dist(...)` of an `enumerative_inference` "
             "result, a `Dict` from each outcome to its probability, or a `Vector` of samples"
         ),
         "dist_object_sentence": (
-            "`ANSWER` is the distribution: `__pplgym_enum_dist(...)` of an "
+            "`ANSWER` is the distribution: `enum_dist(...)` of an "
             "`enumerative_inference` result, a `Dict` from each outcome to its "
             "probability, or a `Vector` of samples."
         ),
@@ -110,7 +110,7 @@ _LANG: dict[str, dict[str, str]] = {
         ),
         "record_intro": "`ANSWER` is a `Dict` with exactly these string keys:",
         "field_dist_object": (
-            "the distribution (`__pplgym_enum_dist(...)`, a `Dict` outcome=>probability, "
+            "the distribution (`enum_dist(...)`, a `Dict` outcome=>probability, "
             "or a `Vector` of samples)"
         ),
         "field_dist_draws": "a single sampled draw from the process",

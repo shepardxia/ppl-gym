@@ -8,7 +8,7 @@ Exact inference over discrete latents (the common case):
   - observations: `obs = choicemap((:addr, value), (:addr2 => idx, value2), ...)`;
   - enumeration grid over the UNOBSERVED latents: `grid = choice_vol_grid((:latent, [values]), (:latent2, [values2]), ...)`;
   - run it and reduce to a distribution over the model's return value:
-    `ANSWER = __pplgym_enum_dist(enumerative_inference(m, (args...,), obs, grid))`.
+    `ANSWER = enum_dist(enumerative_inference(m, (args...,), obs, grid))`.
 Worked example — posterior over a coin's fairness given three heads:
 
 ```julia
@@ -20,15 +20,15 @@ Worked example — posterior over a coin's fairness given three heads:
 end
 obs = choicemap((:f1, true), (:f2, true), (:f3, true))
 grid = choice_vol_grid((:c, [false, true]))
-ANSWER = __pplgym_enum_dist(enumerative_inference(coin, (), obs, grid))
+ANSWER = enum_dist(enumerative_inference(coin, (), obs, grid))
 ```
 
-Soft / log-weight constraints: Gen's DSL has no `factor`, so add a `{:pot} ~ __pplgym_factor(logweight)` choice inside the model and observe it at `0.0` (`choicemap((:pot, 0.0), ...)`). For a two-level RSA, run one `enumerative_inference` per level and feed the finished distribution forward.
+Soft / log-weight constraints: Gen's DSL has no `factor`, so add a `{:pot} ~ factor(logweight)` choice inside the model and observe it at `0.0` (`choicemap((:pot, 0.0), ...)`). For a two-level RSA, run one `enumerative_inference` per level and feed the finished distribution forward.
 
 Sample-based inference when enumeration is infeasible: `Gen.mh` (Metropolis–Hastings over a trace), `Gen.importance_sampling`, or a forward/rejection loop with `Gen.random`; collect the returned values into a `Vector`.
 
 Binding the answer (the task's Answer format section says which form is expected):
-  - a distribution: `__pplgym_enum_dist(...)`, or a `Dict` from each outcome to its probability (`Dict("fair" => 0.7, "biased" => 0.3)`), or a `Vector` of samples;
+  - a distribution: `enum_dist(...)`, or a `Dict` from each outcome to its probability (`Dict("fair" => 0.7, "biased" => 0.3)`), or a `Vector` of samples;
   - a value: a plain `Bool`, number, string, or `Vector` of numbers;
   - a record: a `Dict` with exactly the named string keys, each mapping to a sub-answer of the form above.
 Use the exact outcome labels the task lists (a boolean label is `true`/`false`, a string label is that string).
