@@ -420,7 +420,7 @@ are all small enough for MH/rejection.
   latent models (Beta-Binomial, hierarchical Gaussian, Dirichlet-transition HMMs, PCFGs,
   noisy-OR causal, two-stage nested agents) are not exact-enumerable, but Gen does them
   via **sampling**. A realization declares itself stochastic with the marker
-  **`PPLGYM_SAMPLE`** anywhere in its code; the executor then runs **each seed
+  **`@sampling`** anywhere in its code; the executor then runs **each seed
   independently** (reseeded, parallel) instead of run-once-replicate — one run binds
   `ANSWER` to the collected samples (a cloud) or a posterior expectation. The answer is
   **approximate**, so validation is agreement-within-a-**measured-floor**, like the
@@ -784,7 +784,7 @@ Append-only, dated. The point of this doc — keep adding.
     `enumerative_inference` (returns a distribution) where the harness needs single
     per-seed draws → `AlgebraError` under standard scoring; they "passed" only via
     `gen_validate`'s bespoke per-seed loop (which never pools draws). They had **no
-    stored gen answer** — the tell. Fixed to single-draw + `PPLGYM_SAMPLE`. (2) 3 Pyro
+    stored gen answer** — the tell. Fixed to single-draw + `@sampling`. (2) 3 Pyro
     obs-sequence realizations used `Dirichlet(ones*10)` — but WebPPL `dirichletDrift`'s
     concentration is the MH *drift-kernel* width, prior is `Dirichlet(ones)`; the pyro
     column was internally inconsistent (4 right, 3 wrong) and the wrong ones passed on a

@@ -50,12 +50,10 @@ SERIALIZER_HEADER = r"""
 using Gen, JSON, Random
 
 # Soft factor / unnormalized potential. Gen's @gen DSL has no `factor`, so we
-# supply one the way Gen's own docs prescribe defining a distribution from
-# scratch (gen.dev how_to/custom_distributions): a Distribution subtype
-# implementing the full API (random/logpdf/logpdf_grad/has_*_grad/is_discrete +
-# the callable sugar). Its logpdf returns its argument, so OBSERVING it at a
-# dummy value adds that argument to the trace log-weight — the faithful
-# translation of WebPPL's factor()/Pyro's pyro.factor, read correctly by every
+# define one the way Gen's docs prescribe for a from-scratch distribution
+# (gen.dev how_to/custom_distributions): its logpdf returns its argument, so
+# OBSERVING it at a dummy value adds that argument to the trace log-weight — the
+# faithful translation of WebPPL's factor()/Pyro's pyro.factor, read by every
 # inference algorithm (enumeration, mh, importance).
 # Usage in a realization:  {:pot} ~ factor(w)  + choicemap((:pot, 0.0)).
 struct Factor <: Gen.Distribution{Float64} end
@@ -173,11 +171,14 @@ def execute_gen(code: str, timeout: int = 60, random_seed: int = 0) -> Execution
 
 
 # A realization declares itself STOCHASTIC (sampling inference: mh / importance /
-# hmc over continuous latents) by including this marker anywhere in its code. Then
-# each seed is an independent reseeded run — the batch must NOT replicate one run
-# (that would report zero self-noise and a bogus tolerance). Exact/enumerative
-# realizations omit it and get the cheap run-once-replicate path.
-_SAMPLE_MARKER = "PPLGYM_SAMPLE"
+# hmc over continuous latents, or forward sampling) with a plain `# @sampling`
+# annotation anywhere in its code. Then each seed is an independent reseeded run —
+# the batch must NOT replicate one run (that would report zero self-noise and a
+# bogus tolerance). Exact/enumerative realizations omit it and get the cheap
+# run-once-replicate path. (Explicit annotation, not inferred: forward-sampling
+# realizations carry no mh/importance token and some sampling ones enumerate at a
+# nested level, so no syntactic rule separates the two reliably.)
+SAMPLE_MARKER = "@sampling"
 
 
 def execute_gen_batch(code: str, seeds, timeout: int = 60, workers: int = 1):
@@ -187,7 +188,7 @@ def execute_gen_batch(code: str, seeds, timeout: int = 60, workers: int = 1):
       - **exact** (default): enumerative_inference → deterministic given the code,
         so run ONCE and replicate across seeds (amortizes Julia JIT). A run failure
         is a whole-run failure → raises the real reason.
-      - **sampling** (code contains the ``PPLGYM_SAMPLE`` marker): mh/importance/hmc
+      - **sampling** (code contains the ``@sampling`` marker): mh/importance/hmc
         over continuous latents is stochastic, so each seed is an independent
         reseeded run (parallel across ``workers``); ``answers[i]`` is that seed's
         cloud or ``None``, ``errors[i]`` its reason. All-failed → raises.
@@ -199,7 +200,7 @@ def execute_gen_batch(code: str, seeds, timeout: int = 60, workers: int = 1):
     # heavy-MCMC cloud built in one run is not killed; a cap, not a wait, so fast
     # exact runs are unaffected. Symmetric across GT and candidate (fairness).
     timeout = timeout * GEN_SEED_BUDGET_SCALE
-    if _SAMPLE_MARKER in code:
+    if SAMPLE_MARKER in code:
         answers, errors = run_per_seed(
             lambda s: execute_gen(code, timeout=timeout, random_seed=s),
             seeds, workers=workers, default_error="gen execution failed")

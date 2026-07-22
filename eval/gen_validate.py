@@ -17,10 +17,10 @@ WebPPL's own cross-run noise). The realization passes iff every Gen run passes.
 
 Two executor regimes fall out for free:
 
-  - **exact** (no ``PPLGYM_SAMPLE`` marker): ``enumerative_inference`` is
+  - **exact** (no ``@sampling`` marker): ``enumerative_inference`` is
     deterministic, so the executor replicates one answer across seeds; the GT
     (deterministic WebPPL enumerate) floor is ~eps → a near-exact match required.
-  - **sampling** (``PPLGYM_SAMPLE`` marker): mh/importance/forward runs per seed.
+  - **sampling** (``@sampling`` marker): mh/importance/forward runs per seed.
     Author it with the SAME sample counts the statement/WebPPL GT pins so the two
     estimators carry comparable noise.
 
@@ -42,6 +42,7 @@ from pathlib import Path
 
 from eval.algebra import AlgebraError, canonicalize, judge, parse_spec
 from eval.corpus import batch_executor_for, load_problems
+from eval.executor_gen import SAMPLE_MARKER
 from eval.io import merge_jsonl
 
 DEFAULT_SEEDS = [42, 43, 44, 45, 46]
@@ -106,7 +107,7 @@ def validate_one(
         "floor": worst.get("floor"),
         "pass_frac": f"{n_pass}/{len(verdicts)}",
         "n_gt": len(gts),
-        "sampling": "PPLGYM_SAMPLE" in code,
+        "sampling": SAMPLE_MARKER in code,
     }
 
 
