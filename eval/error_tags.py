@@ -34,22 +34,29 @@ TAGS = (
 # "needs re-exec" rather than silently bucketed.
 _COLLAPSED = re.compile(r"^(execution failed|\d+/\d+ seeded runs failed)$", re.I)
 
-# WebPPL fails at compile time (parse + CPS/naming transform passes) with its own
-# vocabulary — no "compile"/"syntax error" substring, so these would otherwise
-# fall through to `runtime`. Markers observed across the matrix: esprima parse
-# ("did you mean", "unexpected token/identifier/number"), the CPS transform
-# ("cpsInnerStatement", "cpsFinalStatement", "can't cps"), the naming pass
-# ("atomize"), and AST-schema rejections (unsupported operator "does not match
-# field", compile-time assignment restriction "you can only assign").
-_WEBPPL_COMPILE = (
-    "cpsinnerstatement", "cpsfinalstatement", "can't cps",
-    "atomize",
-    "did you mean",
-    "unexpected token", "unexpected identifier",
-    "unexpected number", "unexpected string",
-    "does not match field",
-    "you can only assign",
+# Generic compile/parse markers — Stan compiler + Python SyntaxError. These are
+# exception-class-specific (low collision with runtime text), so applied for every
+# language.
+_COMPILE_MARKERS = (
+    "compile", "syntax error", "semantic error", "parsing error",
+    "syntaxerror", "indentationerror",
 )
+
+# WebPPL fails at compile time (esprima parse + CPS/naming transform passes) with
+# its own vocabulary — no "compile"/"syntax error" substring, so these would
+# otherwise fall through to `runtime`: the CPS transform ("cpsInnerStatement",
+# "cpsFinalStatement", "can't cps"), the naming pass ("atomize"), esprima parse
+# ("did you mean", "unexpected ..."), and AST-schema rejections ("does not match
+# field", "you can only assign"). Several are generic English that ALSO occurs in
+# Python runtime messages (e.g. a NameError's "did you mean"), so this set is
+# scoped to webppl via _COMPILE_BY_LANG and never applied to other languages.
+_WEBPPL_COMPILE = (
+    "cpsinnerstatement", "cpsfinalstatement", "can't cps", "atomize",
+    "did you mean", "unexpected ", "does not match field", "you can only assign",
+)
+
+# Language-scoped compile vocabulary, added to _COMPILE_MARKERS for that language.
+_COMPILE_BY_LANG = {"webppl": _WEBPPL_COMPILE}
 
 
 def is_collapsed(error: str | None) -> bool:
@@ -62,7 +69,13 @@ def is_collapsed(error: str | None) -> bool:
 
 
 def classify(error: str | None, language: str = "") -> str:
-    """Map a real failure reason to one stable tag. Language is advisory."""
+    """Map a real failure reason to one stable tag.
+
+    ``language`` selects language-scoped compile vocabulary (see
+    ``_COMPILE_BY_LANG``) — e.g. WebPPL's esprima/CPS parser markers, several of
+    which are generic English that would false-match Python runtime messages if
+    applied to every language.
+    """
     e = (error or "").strip()
     el = e.lower()
     if not e or is_collapsed(e):
@@ -75,12 +88,9 @@ def classify(error: str | None, language: str = "") -> str:
         return "corpus_miss"
     if "timeout" in el:
         return "timeout"
-    # Compile / parse failures: Stan compiler messages, Python SyntaxError,
-    # and WebPPL's own parse/transform-pass vocabulary.
-    if ("compile" in el or "syntax error" in el or "semantic error" in el
-            or "parsing error" in el or "syntaxerror" in el
-            or "indentationerror" in el
-            or any(m in el for m in _WEBPPL_COMPILE)):
+    # Compile / parse failures: generic markers (Stan compiler, Python
+    # SyntaxError) plus this language's own compile vocabulary.
+    if any(m in el for m in _COMPILE_MARKERS + _COMPILE_BY_LANG.get(language, ())):
         return "compile"
     if ("did not define answer" in el or "produced no output" in el
             or "not valid json" in el or "non-json output" in el

@@ -59,6 +59,20 @@ def test_webppl_compile_vocabulary_is_compile_not_runtime():
         assert classify(msg, "webppl") == "runtime", msg
 
 
+def test_webppl_compile_vocabulary_is_scoped_to_webppl():
+    # The WebPPL parser vocabulary is generic English that collides with Python
+    # runtime messages (a NameError's "did you mean", a ValueError "unexpected
+    # ...") — it must NOT re-tag another language's runtime error as compile.
+    for lang in ("pyro", "stan", "gen"):
+        assert classify(
+            "ValueError('5000 is not callable, did you mean to pass it as a "
+            "keyword arg?')", lang) == "runtime"
+        assert classify("RuntimeError: unexpected shape (3,) for tensor", lang) == "runtime"
+    # Genuine Python/Stan compile failures still bucket compile in every language.
+    assert classify("SyntaxError: invalid syntax", "pyro") == "compile"
+    assert classify("Semantic error in 'model.stan', line 4", "stan") == "compile"
+
+
 def test_collapsed_placeholders_are_flagged_not_bucketed():
     # Pre-fix placeholders: real reason was lost -> must not be silently bucketed.
     for ph in ("execution failed", "3/5 seeded runs failed", "1/1 SEEDED RUNS FAILED"):
