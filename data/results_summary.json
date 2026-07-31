@@ -1,0 +1,529 @@
+[
+  {
+    "model": "gpt-oss-120b",
+    "language": "gen",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 106,
+      "exec_error": 262,
+      "fail": 53,
+      "malformed": 8
+    },
+    "exec_error_tags": {
+      "runtime": 230,
+      "compile": 31,
+      "timeout": 1
+    },
+    "pass_rate": 0.2471
+  },
+  {
+    "model": "gpt-oss-120b",
+    "language": "pyro",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "malformed": 29,
+      "pass": 237,
+      "fail": 91,
+      "exec_error": 72
+    },
+    "exec_error_tags": {
+      "runtime": 63,
+      "timeout": 9
+    },
+    "pass_rate": 0.5524
+  },
+  {
+    "model": "gpt-oss-120b",
+    "language": "stan",
+    "n": 225,
+    "n_scorable": 225,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 157,
+      "exec_error": 45,
+      "fail": 23
+    },
+    "exec_error_tags": {
+      "compile": 45
+    },
+    "pass_rate": 0.6978
+  },
+  {
+    "model": "gpt-oss-120b",
+    "language": "webppl",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 127,
+      "exec_error": 267,
+      "fail": 31,
+      "malformed": 4
+    },
+    "exec_error_tags": {
+      "runtime": 54,
+      "compile": 212,
+      "timeout": 1
+    },
+    "pass_rate": 0.296
+  },
+  {
+    "model": "gpt-oss-20b",
+    "language": "gen",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 63,
+      "exec_error": 316,
+      "fail": 45,
+      "malformed": 5
+    },
+    "exec_error_tags": {
+      "compile": 62,
+      "runtime": 251,
+      "timeout": 3
+    },
+    "pass_rate": 0.1469
+  },
+  {
+    "model": "gpt-oss-20b",
+    "language": "pyro",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "fail": 103,
+      "pass": 177,
+      "exec_error": 120,
+      "malformed": 29
+    },
+    "exec_error_tags": {
+      "runtime": 110,
+      "compile": 4,
+      "timeout": 6
+    },
+    "pass_rate": 0.4126
+  },
+  {
+    "model": "gpt-oss-20b",
+    "language": "stan",
+    "n": 225,
+    "n_scorable": 225,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 87,
+      "pass": 115,
+      "fail": 23
+    },
+    "exec_error_tags": {
+      "compile": 77,
+      "timeout": 4,
+      "other": 6
+    },
+    "pass_rate": 0.5111
+  },
+  {
+    "model": "gpt-oss-20b",
+    "language": "webppl",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 67,
+      "exec_error": 338,
+      "fail": 15,
+      "malformed": 9
+    },
+    "exec_error_tags": {
+      "runtime": 92,
+      "compile": 246
+    },
+    "pass_rate": 0.1562
+  },
+  {
+    "model": "haiku",
+    "language": "gen",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 128,
+      "fail": 62,
+      "exec_error": 227,
+      "malformed": 12
+    },
+    "exec_error_tags": {
+      "runtime": 208,
+      "compile": 9,
+      "timeout": 9,
+      "other": 1
+    },
+    "pass_rate": 0.2984
+  },
+  {
+    "model": "haiku",
+    "language": "pyro",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 208,
+      "pass": 124,
+      "fail": 79,
+      "malformed": 18
+    },
+    "exec_error_tags": {
+      "runtime": 162,
+      "compile": 16,
+      "timeout": 30
+    },
+    "pass_rate": 0.289
+  },
+  {
+    "model": "haiku",
+    "language": "stan",
+    "n": 225,
+    "n_scorable": 225,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 159,
+      "exec_error": 48,
+      "fail": 18
+    },
+    "exec_error_tags": {
+      "compile": 38,
+      "timeout": 3,
+      "other": 7
+    },
+    "pass_rate": 0.7067
+  },
+  {
+    "model": "haiku",
+    "language": "webppl",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 164,
+      "exec_error": 210,
+      "fail": 53,
+      "malformed": 2
+    },
+    "exec_error_tags": {
+      "compile": 153,
+      "timeout": 12,
+      "runtime": 45
+    },
+    "pass_rate": 0.3823
+  },
+  {
+    "model": "llama-3.3-70b",
+    "language": "gen",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 395,
+      "malformed": 6,
+      "fail": 17,
+      "pass": 11
+    },
+    "exec_error_tags": {
+      "compile": 85,
+      "runtime": 309,
+      "timeout": 1
+    },
+    "pass_rate": 0.0256
+  },
+  {
+    "model": "llama-3.3-70b",
+    "language": "pyro",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 325,
+      "pass": 36,
+      "fail": 48,
+      "malformed": 20
+    },
+    "exec_error_tags": {
+      "runtime": 283,
+      "compile": 27,
+      "no_output": 2,
+      "timeout": 13
+    },
+    "pass_rate": 0.0839
+  },
+  {
+    "model": "llama-3.3-70b",
+    "language": "stan",
+    "n": 225,
+    "n_scorable": 225,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 181,
+      "pass": 34,
+      "fail": 10
+    },
+    "exec_error_tags": {
+      "compile": 152,
+      "timeout": 1,
+      "runtime": 5,
+      "other": 23
+    },
+    "pass_rate": 0.1511
+  },
+  {
+    "model": "llama-3.3-70b",
+    "language": "webppl",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 72,
+      "fail": 22,
+      "exec_error": 328,
+      "malformed": 7
+    },
+    "exec_error_tags": {
+      "compile": 275,
+      "runtime": 52,
+      "timeout": 1
+    },
+    "pass_rate": 0.1678
+  },
+  {
+    "model": "qwen3-235b",
+    "language": "gen",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 327,
+      "pass": 53,
+      "fail": 45,
+      "malformed": 4
+    },
+    "exec_error_tags": {
+      "runtime": 299,
+      "compile": 28
+    },
+    "pass_rate": 0.1235
+  },
+  {
+    "model": "qwen3-235b",
+    "language": "pyro",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "malformed": 45,
+      "fail": 84,
+      "pass": 118,
+      "exec_error": 182
+    },
+    "exec_error_tags": {
+      "runtime": 159,
+      "compile": 12,
+      "timeout": 11
+    },
+    "pass_rate": 0.2751
+  },
+  {
+    "model": "qwen3-235b",
+    "language": "stan",
+    "n": 225,
+    "n_scorable": 225,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 64,
+      "fail": 25,
+      "pass": 136
+    },
+    "exec_error_tags": {
+      "compile": 58,
+      "timeout": 3,
+      "other": 3
+    },
+    "pass_rate": 0.6044
+  },
+  {
+    "model": "qwen3-235b",
+    "language": "webppl",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 167,
+      "exec_error": 215,
+      "fail": 43,
+      "malformed": 4
+    },
+    "exec_error_tags": {
+      "compile": 134,
+      "runtime": 77,
+      "other": 1,
+      "timeout": 3
+    },
+    "pass_rate": 0.3893
+  },
+  {
+    "model": "qwen3.5-9b",
+    "language": "gen",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 412,
+      "fail": 7,
+      "pass": 8,
+      "malformed": 2
+    },
+    "exec_error_tags": {
+      "runtime": 299,
+      "compile": 113
+    },
+    "pass_rate": 0.0186
+  },
+  {
+    "model": "qwen3.5-9b",
+    "language": "pyro",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 290,
+      "pass": 76,
+      "fail": 34,
+      "malformed": 29
+    },
+    "exec_error_tags": {
+      "runtime": 214,
+      "compile": 62,
+      "other": 1,
+      "no_output": 8,
+      "empty_code": 1,
+      "timeout": 4
+    },
+    "pass_rate": 0.1772
+  },
+  {
+    "model": "qwen3.5-9b",
+    "language": "stan",
+    "n": 225,
+    "n_scorable": 225,
+    "gt_unscorable": 0,
+    "status": {
+      "exec_error": 155,
+      "pass": 59,
+      "fail": 11
+    },
+    "exec_error_tags": {
+      "compile": 150,
+      "other": 5
+    },
+    "pass_rate": 0.2622
+  },
+  {
+    "model": "qwen3.5-9b",
+    "language": "webppl",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 24,
+      "exec_error": 390,
+      "fail": 11,
+      "malformed": 4
+    },
+    "exec_error_tags": {
+      "runtime": 90,
+      "compile": 298,
+      "no_output": 1,
+      "empty_code": 1
+    },
+    "pass_rate": 0.0559
+  },
+  {
+    "model": "sonnet",
+    "language": "gen",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 277,
+      "malformed": 24,
+      "fail": 54,
+      "exec_error": 74
+    },
+    "exec_error_tags": {
+      "runtime": 72,
+      "timeout": 2
+    },
+    "pass_rate": 0.6457
+  },
+  {
+    "model": "sonnet",
+    "language": "pyro",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "malformed": 23,
+      "pass": 262,
+      "fail": 65,
+      "exec_error": 79
+    },
+    "exec_error_tags": {
+      "runtime": 23,
+      "timeout": 55,
+      "compile": 1
+    },
+    "pass_rate": 0.6107
+  },
+  {
+    "model": "sonnet",
+    "language": "stan",
+    "n": 225,
+    "n_scorable": 225,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 189,
+      "exec_error": 11,
+      "fail": 23,
+      "ill_posed": 2
+    },
+    "exec_error_tags": {
+      "timeout": 1,
+      "other": 4,
+      "compile": 6
+    },
+    "pass_rate": 0.84
+  },
+  {
+    "model": "sonnet",
+    "language": "webppl",
+    "n": 429,
+    "n_scorable": 429,
+    "gt_unscorable": 0,
+    "status": {
+      "pass": 307,
+      "exec_error": 92,
+      "fail": 28,
+      "malformed": 2
+    },
+    "exec_error_tags": {
+      "runtime": 22,
+      "compile": 68,
+      "timeout": 1,
+      "no_output": 1
+    },
+    "pass_rate": 0.7156
+  }
+]

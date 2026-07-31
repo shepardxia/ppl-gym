@@ -77,6 +77,55 @@ def build_rollouts(runs_dir: Path) -> list[dict]:
     return rows
 
 
+def build_results_summary(runs_dir: Path) -> list[dict]:
+    """Per (model, language) benchmark counts, for the committed web results view.
+
+    ``model`` is the short run-dir name (``sonnet``, ``gpt-oss-120b``) so it joins
+    the web rollouts. ``gt_unscorable`` rows (OUR ground truth failed, not the
+    model) are excluded from the status buckets and the pass-rate denominator, so
+    ``pass_rate`` is read over the scorable subset. ``exec_error`` is broken down
+    by ``error_tag`` so a consumer can separate can't-write-the-DSL failures
+    (compile/no_output) from harness/GT ones (timeout/gt_side).
+    """
+    from collections import Counter
+
+    scored_files = sorted(glob.glob(str(runs_dir / "*/*/scored.jsonl")))
+    if not scored_files:
+        raise SystemExit(f"no scored.jsonl under {runs_dir}")
+    gt_broken = _gt_broken_by_lang(scored_files)
+    agg: dict[tuple, dict] = {}
+    for f in scored_files:
+        lang = Path(f).parent.name.split("__")[1]
+        model = Path(f).parents[1].name  # short run-dir name (sonnet, gpt-oss-120b)
+        a = agg.setdefault((model, lang),
+                           {"n": 0, "gt_unscorable": 0,
+                            "status": Counter(), "exec_error_tags": Counter()})
+        for line in open(f):
+            r = json.loads(line)
+            if r.get("summary") or not r.get("problem_id"):
+                continue
+            a["n"] += 1
+            if r["problem_id"] in gt_broken.get(lang, set()):
+                a["gt_unscorable"] += 1
+                continue
+            status = r.get("status")
+            a["status"][status] += 1
+            if status == "exec_error":
+                a["exec_error_tags"][_error_tag(r.get("error"), r.get("error_tag"), lang) or "other"] += 1
+
+    out: list[dict] = []
+    for (model, lang), a in sorted(agg.items()):
+        n_scorable = a["n"] - a["gt_unscorable"]
+        out.append({
+            "model": model, "language": lang,
+            "n": a["n"], "n_scorable": n_scorable, "gt_unscorable": a["gt_unscorable"],
+            "status": dict(a["status"]),
+            "exec_error_tags": dict(a["exec_error_tags"]),
+            "pass_rate": round(a["status"]["pass"] / n_scorable, 4) if n_scorable else None,
+        })
+    return out
+
+
 # Status rank for picking a model's representative slot: a passing attempt beats
 # a wrong-but-running one beats a malformed/crashing one.
 _STATUS_RANK = {"pass": 0, "fail": 1, "ill_posed": 2, "malformed": 3, "exec_error": 4}
@@ -343,6 +392,9 @@ def main() -> None:
     ap.add_argument("--web-out", default=None,
                     help="also write the curated web build-input rollouts JSONL here "
                          "(best slot per problem×model×language).")
+    ap.add_argument("--results-out", default=None,
+                    help="write the per (model,language) benchmark summary JSON here "
+                         "(committed web results view; e.g. data/results_summary.json).")
     ap.add_argument("--repo", default="Sheppp/ppl-gym-rollouts")
     ap.add_argument("--answers-langs", default=None,
                     help="comma langs to re-execute for the answer overlay (e.g. webppl). "
@@ -356,6 +408,14 @@ def main() -> None:
     a = ap.parse_args()
 
     runs = (_REPO / a.runs) if not Path(a.runs).is_absolute() else Path(a.runs)
+
+    if a.results_out:
+        rp = Path(a.results_out).resolve()
+        summary = build_results_summary(runs)
+        rp.parent.mkdir(parents=True, exist_ok=True)
+        with open(rp, "w") as f:
+            json.dump(summary, f, indent=2)
+        print(f"[export] results summary: {len(summary)} (model,language) combos -> {rp}")
 
     if a.web_out:
         wp = Path(a.web_out).resolve()
