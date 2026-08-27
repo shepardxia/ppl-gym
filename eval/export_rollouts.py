@@ -335,6 +335,7 @@ tags:
   - webppl
   - pyro
   - stan
+  - gen
 configs:
   - config_name: rollouts
     data_files: rollouts.jsonl
@@ -358,7 +359,7 @@ under a single answer comparator.
 ## Configs
 
 - **rollouts** ({n_rollouts} rows) — one generated solution per row:
-  `model`, `language` (webppl / pyro / stan), `problem_id`, `slot` (sample
+  `model`, `language` (webppl / pyro / gen / stan), `problem_id`, `slot` (sample
   index), `code` (the generated program), and the scored verdict: `status`
   (pass / fail / ill_posed / malformed / exec_error), `distance`, `tol`,
   `floor`, `metric`, `code_jaccard` (vs the reference realization),
@@ -380,8 +381,11 @@ collection time budget; those are **unscorable for every model** and are flagged
 
 ## Models
 
-claude-sonnet-4-6, claude-haiku-4-5, gpt-oss-20b, gpt-oss-120b,
-Llama-3.3-70B-Instruct, Qwen3-235B-A22B-Instruct, Qwen3.5-9B.
+{models}
+
+Sample count per (model, language) is not uniform: `slot` counts the samples a
+model actually has, and pass rates must be computed per generation rather than
+assumed over a fixed denominator.
 """
 
 
@@ -443,8 +447,12 @@ def main() -> None:
     _write_jsonl(rollouts, out / "rollouts.jsonl")
     _write_jsonl(problems, out / "problems.jsonl")
     _write_jsonl(gt, out / "gt_answers.jsonl")
+    # Derived, never hand-listed: a hardcoded roster silently goes stale the
+    # first time a model is added to the matrix.
+    models = ", ".join(sorted({r["model"] for r in rollouts if r.get("model")}))
     (out / "README.md").write_text(
-        _CARD.format(n_rollouts=len(rollouts), n_problems=len(problems), n_gt=len(gt)))
+        _CARD.format(n_rollouts=len(rollouts), n_problems=len(problems),
+                     n_gt=len(gt), models=models))
 
     n_unscorable = sum(1 for r in rollouts if r["gt_unscorable"])
     print(f"[export] rollouts={len(rollouts)} ({n_unscorable} gt_unscorable) "
