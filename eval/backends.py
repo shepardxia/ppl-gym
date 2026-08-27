@@ -35,6 +35,8 @@ class ModelConfig:
     max_tokens: int = DEFAULT_MAX_TOKENS
     temperature: float = DEFAULT_TEMPERATURE
     thinking_budget: int | None = None   # anthropic extended-thinking budget tokens
+    adaptive_thinking: bool = False       # anthropic adaptive thinking; rejects temperature
+    effort: str | None = None             # anthropic output_config effort level
     reasoning_effort: str | None = None  # together gpt-oss reasoning level
 
 
@@ -43,6 +45,8 @@ class ModelConfig:
 _REASONER_MAX = 24000
 
 MODELS: dict[str, ModelConfig] = {
+    "opus":         ModelConfig("opus", "anthropic", "claude-opus-5",
+                                max_tokens=32000, adaptive_thinking=True, effort="high"),
     "sonnet":       ModelConfig("sonnet", "anthropic", "claude-sonnet-4-6",
                                 max_tokens=8192, thinking_budget=4096),
     "haiku":        ModelConfig("haiku", "anthropic", "claude-haiku-4-5-20251001",
@@ -64,6 +68,21 @@ def resolve(name: str) -> ModelConfig:
     if name in MODELS:
         return MODELS[name]
     raise ValueError(f"unknown model {name!r}; known: {sorted(MODELS)}")
+
+
+def resolve_loose(model: str) -> ModelConfig | None:
+    """Registry entry matching a short name or a provider model id, else None.
+
+    Callers that accept a raw model id must route through this: a model's
+    request-shape contract (adaptive thinking, effort, sampling params) lives on
+    its registry entry, and a hand-built ModelConfig silently loses it.
+    """
+    if model in MODELS:
+        return MODELS[model]
+    for cfg in MODELS.values():
+        if cfg.model_id == model:
+            return cfg
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -97,12 +116,17 @@ def anthropic_requests(prompts, cfg: ModelConfig) -> list[dict]:
         params = {
             "model": cfg.model_id,
             "max_tokens": cfg.max_tokens,
-            "temperature": cfg.temperature,
             "system": [{"type": "text", "text": p["system"],
                         "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": p["user"]}],
         }
-        if cfg.thinking_budget:
+        if cfg.adaptive_thinking:
+            params["thinking"] = {"type": "adaptive"}
+            if cfg.effort:
+                params["output_config"] = {"effort": cfg.effort}
+        else:
+            params["temperature"] = cfg.temperature
+        if cfg.thinking_budget and not cfg.adaptive_thinking:
             # Extended thinking forces temperature=1 and needs max_tokens > budget.
             params["thinking"] = {"type": "enabled", "budget_tokens": cfg.thinking_budget}
             params["temperature"] = 1.0

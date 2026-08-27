@@ -104,11 +104,13 @@ def build_requests(
     prompt builder + Anthropic packaging in eval.backends.)
     """
     # Lazy import: eval.backends imports this module's cid/constants at load.
-    from eval.backends import ModelConfig, anthropic_requests, build_prompts
+    from eval.backends import ModelConfig, anthropic_requests, build_prompts, resolve_loose
     prompts = build_prompts(problems, language, n_solvers=n_solvers,
                             with_primer=with_primer, verbose_primer=verbose_primer)
-    cfg = ModelConfig(name="", backend="anthropic", model_id=model,
-                      max_tokens=max_tokens, temperature=temperature)
+    cfg = resolve_loose(model)
+    if cfg is None:
+        cfg = ModelConfig(name="", backend="anthropic", model_id=model,
+                          max_tokens=max_tokens, temperature=temperature)
     return anthropic_requests(prompts, cfg)
 
 

@@ -132,12 +132,16 @@ def execute_stan_batch(code: str, seeds, timeout: int, workers: int):
         # diamonds, N=5000) AND the sampling regime (total chain-iterations; a
         # gold-reproduction GT like low_dim_gauss_mix runs 8x9000 iters — 9x the
         # 4x2000 default — and N alone leaves it a 60s budget). Cap at 10x.
+        # A floor is required because neither driver sees per-iteration model
+        # structure: a GP is cubic in N and an HMM runs a forward pass, so both
+        # blow a small-N budget (mcycle_gp/accel_gp and hmm_drive_1 starved at
+        # 60s with N-derived scale 1).
         n = max((len(v) for v in b.data.values() if isinstance(v, list)), default=1)
         chain_iters = b.sampling.get("chains", 4) * (
             b.sampling.get("iter_warmup", 1000) + b.sampling.get("iter_sampling", 1000))
         regime = max(1, -(-chain_iters // 8000))  # vs the 4x2000 default
-        scale = max(-(-n // 1000), regime)
-        fit_timeout = min(timeout * max(1, scale), timeout * 10) if timeout else timeout
+        scale = max(-(-n // 500), regime, 5)
+        fit_timeout = min(timeout * max(1, scale), timeout * 20) if timeout else timeout
 
         # Seeds are independent fits. cmdstanpy already parallelizes chains within
         # a fit; run a few fits concurrently but keep total processes bounded.
